@@ -107,3 +107,18 @@ export interface UpstoxState {
   source: "environment" | "keychain" | "memory" | null;
   feed: FeedStatus;
 }
+
+export interface InsightState {
+  configured: boolean;
+  source: "environment" | "keychain" | "memory" | null;
+  model: string;
+}
+
+export interface Memo {
+  id: number;
+  created_at: string;
+  model: string;
+  text: string;
+  payload: Record<string, unknown>;
+  unverified_numbers: string[];
+}

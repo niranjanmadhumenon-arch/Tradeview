@@ -49,3 +49,7 @@ def token() -> str | None:
 def feed_choice() -> str:
     return os.environ.get("QT_FEED", "auto").strip().lower()
 
+
+
+def gemini_model() -> str:
+    return os.environ.get("QT_GEMINI_MODEL", "").strip() or "gemini-3.8-flash"

@@ -1,4 +1,4 @@
-import type { CorporateAction, ImportResult, LiveSnapshot, Portfolio, Settings, Trade, UpstoxState } from "./types";
+import type { CorporateAction, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, Settings, Trade, UpstoxState } from "./types";
 
 declare global {
   interface Window {
@@ -46,6 +46,17 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   removeUpstoxToken: () => call<UpstoxState>("/api/upstox/token", { method: "DELETE" }),
+  insight: () => call<InsightState>("/api/insight"),
+  saveInsightKey: (key: string) =>
+    call<InsightState>("/api/insight/key", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
+  removeInsightKey: () => call<InsightState>("/api/insight/key", { method: "DELETE" }),
+  insightPreview: () => call<Record<string, unknown>>("/api/insight/preview"),
+  createMemo: () => call<Memo>("/api/insight/memo", { method: "POST" }),
+  memos: () => call<Memo[]>("/api/insight/memos"),
   importCsv: (file: File) => {
     const form = new FormData();
     form.append("file", file);

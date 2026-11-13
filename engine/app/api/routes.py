@@ -3,6 +3,8 @@ are to the local ledger database (imports, manual corporate actions, settings)."
 from __future__ import annotations
 
 import asyncio
+import json
+from datetime import datetime
 
 from datetime import date
 from typing import Literal
@@ -12,7 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import CorporateAction, Instrument, Trade
+from app import config
+from app.ai import memo as memo_ai
+from app.ai.gemini import InsightError
+from app.db.models import CorporateAction, Instrument, Memo, Trade
 from app.ledger import upstox
 from app.quant import service
 
@@ -218,3 +223,80 @@ def add_action(body: ActionIn, request: Request, session: Session = Depends(get_
     session.commit()
     _poke(request)
     return {"id": action.id}
+
+
+# ---------------------------------------------------------------- AI insight
+
+class ApiKeyIn(BaseModel):
+    key: str = Field(min_length=20, max_length=512)
+
+
+def _insight_state(request: Request) -> dict:
+    store = request.app.state.gemini_store
+    return {"configured": store.get() is not None, "source": store.source(),
+            "model": config.gemini_model()}
+
+
+def _memo_json(m: Memo) -> dict:
+    return {"id": m.id, "created_at": m.created_at.isoformat(), "model": m.model, "text": m.text,
+            "payload": json.loads(m.payload), "unverified_numbers": json.loads(m.unverified)}
+
+
+@router.get("/insight")
+def insight_status(request: Request):
+    return _insight_state(request)
+
+
+@router.put("/insight/key")
+def save_insight_key(body: ApiKeyIn, request: Request):
+    key = body.key.strip()
+    if any(c.isspace() for c in key):
+        raise HTTPException(status_code=400, detail="That does not look like an API key (it contains spaces)")
+    try:
+        request.app.state.gemini_store.set(key)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _insight_state(request)
+
+
+@router.delete("/insight/key")
+def remove_insight_key(request: Request):
+    request.app.state.gemini_store.clear()
+    return _insight_state(request)
+
+
+@router.get("/insight/preview")
+def insight_preview(session: Session = Depends(get_session)):
+    """Exactly what would be sent to the model, so the user can inspect it first."""
+    data = service.compute(session, refresh=False)
+    if not data["metrics"]:
+        raise HTTPException(status_code=409, detail="No risk metrics yet. Import trades and refresh prices first.")
+    return memo_ai.build_payload(data)
+
+
+@router.post("/insight/memo")
+def create_memo(request: Request, session: Session = Depends(get_session)):
+    """Sends the locally computed risk figures to Gemini and stores the memo it writes."""
+    api_key = request.app.state.gemini_store.get()
+    if not api_key:
+        raise HTTPException(status_code=409, detail="No Gemini API key saved.")
+    data = service.compute(session, refresh=False)
+    if not data["metrics"]:
+        raise HTTPException(status_code=409, detail="No risk metrics yet. Import trades and refresh prices first.")
+    payload = memo_ai.build_payload(data)
+    model = config.gemini_model()
+    try:
+        text = request.app.state.memo_generator(api_key, model, memo_ai.SYSTEM_INSTRUCTION, payload)
+    except InsightError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    row = Memo(created_at=datetime.now(), model=model, payload=json.dumps(payload), text=text,
+               unverified=json.dumps(memo_ai.unverified_numbers(text, payload)))
+    session.add(row)
+    session.commit()
+    return _memo_json(row)
+
+
+@router.get("/insight/memos")
+def list_memos(limit: int = Query(20, ge=1, le=100), session: Session = Depends(get_session)):
+    rows = session.scalars(select(Memo).order_by(Memo.id.desc()).limit(limit)).all()
+    return [_memo_json(m) for m in rows]

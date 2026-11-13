@@ -5,7 +5,7 @@ import uvicorn
 
 from app import config
 from app.main import create_app
-from app.secrets import KeyringStore
+from app.secrets import GEMINI, UPSTOX, KeyringStore
 
 
 def make_feed(store):
@@ -24,7 +24,11 @@ def make_feed(store):
     return YahooPollFeed()
 
 
-app = create_app(token_store=KeyringStore(), feed_factory=make_feed)
+app = create_app(
+    token_store=KeyringStore(*UPSTOX),
+    feed_factory=make_feed,
+    gemini_store=KeyringStore(*GEMINI),
+)
 
 
 def main() -> None:

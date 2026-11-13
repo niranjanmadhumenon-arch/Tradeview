@@ -40,6 +40,8 @@ Interactive API docs: http://127.0.0.1:8765/docs
 | `QT_DATA_DIR` | where the SQLite ledger lives | per-user app data folder |
 | `QT_FEED` | live prices: `auto`, `upstox`, `yahoo` or `off` | `auto` |
 | `QT_UPSTOX_TOKEN` | Upstox token; overrides the one saved in the app | unset |
+| `QT_GEMINI_API_KEY` | Gemini API key; overrides the one saved in the app | unset |
+| `QT_GEMINI_MODEL` | Gemini model used for memos | `gemini-3.8-flash` |
 
 ## Live prices
 
@@ -60,6 +62,19 @@ seconds and the ribbon shows DELAYED. `QT_FEED=upstox` disables this fallback.
 The engine only ever sends GET requests to Upstox: the feed authorize call and
 the public instrument list.
 
+## AI insight
+
+The **AI INSIGHT** tab writes a short hedging memo with Google Gemini. Paste a
+Gemini API key from Google AI Studio once; it is saved in the system keychain.
+
+- Gemini receives only a small JSON of figures the engine already computed and
+  rounded (weights, beta, VaR, ratios, drawdown). No trades, quantities or
+  costs. "Show data sent to Gemini" in the pane shows the exact content.
+- The prompt forbids calculations, hedge sizes and order instructions. After the
+  memo returns, every number in it is checked against the figures sent, and any
+  that do not match are flagged in the pane as unverified.
+- Memos are stored locally with the data that produced them.
+
 ## Status
 
 - [x] Engine: Upstox trade-book import, positions with corporate actions,
@@ -69,7 +84,7 @@ the public instrument list.
       command palette)
 - [x] Live prices over WebSocket (Upstox feed adapter, delayed Yahoo fallback)
 - [x] Upstox token setup in the app, stored in the system keychain
-- [ ] Gemini hedging memo
+- [x] Gemini hedging memo with a check on every number it quotes
 - [ ] Packaging (macOS .dmg, Windows installer)
 
 Metric formulas: [docs/metrics.md](docs/metrics.md)

@@ -53,6 +53,18 @@ class PriceBar(Base):
     adj_close: Mapped[float] = mapped_column(Float)
 
 
+class Memo(Base):
+    """An AI-written memo plus the exact figures that were sent to produce it."""
+
+    __tablename__ = "memos"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    model: Mapped[str] = mapped_column(String)
+    payload: Mapped[str] = mapped_column(String)      # JSON sent to the model
+    text: Mapped[str] = mapped_column(String)
+    unverified: Mapped[str] = mapped_column(String, default="[]")  # JSON list of flagged numbers
+
+
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String, primary_key=True)

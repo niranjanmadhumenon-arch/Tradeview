@@ -4,11 +4,12 @@ import { ActionsPane } from "../panes/ActionsPane";
 import { ChartPane } from "../panes/ChartPane";
 import { CovariancePane } from "../panes/CovariancePane";
 import { HoldingsPane } from "../panes/HoldingsPane";
+import { InsightPane } from "../panes/InsightPane";
 import { RiskPane } from "../panes/RiskPane";
 import { TradesPane } from "../panes/TradesPane";
 import { useStore } from "../state/store";
 
-const KEY = "qt.layout.v1";
+const KEY = "qt.layout.v2";
 
 const DEFAULT: IJsonModel = {
   global: { tabEnableClose: false, tabSetEnableMaximize: true, tabSetMinWidth: 180, tabSetMinHeight: 120 },
@@ -30,7 +31,13 @@ const DEFAULT: IJsonModel = {
           { type: "tab", name: "COVARIANCE", component: "covariance" },
         ],
       },
-      { type: "tabset", weight: 24, children: [{ type: "tab", name: "RISK", component: "risk" }] },
+      {
+        type: "tabset", weight: 24,
+        children: [
+          { type: "tab", name: "RISK", component: "risk" },
+          { type: "tab", name: "AI INSIGHT", component: "insight" },
+        ],
+      },
     ],
   },
 };
@@ -42,6 +49,7 @@ const PANES: Record<string, () => React.JSX.Element> = {
   chart: ChartPane,
   covariance: CovariancePane,
   risk: RiskPane,
+  insight: InsightPane,
 };
 
 function loadModel(fresh: boolean): Model {

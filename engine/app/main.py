@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
+from app.ai import gemini
 from app.api.routes import router
 from app.db.models import make_sessionmaker
 from app.market.live import Feed, LiveHub
@@ -20,6 +21,8 @@ def create_app(
     feed: Feed | None = None,
     token_store: TokenStore | None = None,
     feed_factory: Callable[[TokenStore], Feed | None] | None = None,
+    gemini_store: TokenStore | None = None,
+    memo_generator: Callable[..., str] | None = None,
 ) -> FastAPI:
     """`feed_factory` builds the price feed from the stored Upstox token and is
     called again whenever that token changes. `feed` is a fixed feed for tests."""
@@ -35,10 +38,12 @@ def create_app(
         if app.state.hub:
             await app.state.hub.stop()
 
-    app = FastAPI(title="Quant Terminal Engine", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="Quant Terminal Engine", version="0.4.0", lifespan=lifespan)
     app.state.sessionmaker = make_sessionmaker(db_url or config.database_url())
     app.state.token = token if token is not None else config.token()
     app.state.token_store = store
+    app.state.gemini_store = gemini_store or MemoryStore()
+    app.state.memo_generator = memo_generator or gemini.generate
     app.state.feed_factory = factory
     app.state.hub = LiveHub(app.state.sessionmaker, first_feed) if first_feed else None
     app.add_middleware(
