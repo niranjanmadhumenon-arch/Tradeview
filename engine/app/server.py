@@ -33,10 +33,10 @@ app = create_app(
 
 def main() -> None:
     # Under the desktop shell the session token travels in the WebSocket URL,
-    # so request logging is switched off to keep it out of any log.
-    uvicorn.run(app, host=config.host(), port=config.port(), log_level="info",
-                access_log=config.token() is None)
-
+    # and uvicorn logs that URL at INFO level, so only warnings are logged there.
+    quiet = config.token() is not None
+    uvicorn.run(app, host=config.host(), port=config.port(),
+                log_level="warning" if quiet else "info", access_log=not quiet)
 
 if __name__ == "__main__":
     main()
