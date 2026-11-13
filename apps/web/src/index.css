@@ -1,0 +1,67 @@
+@import "tailwindcss";
+@import "flexlayout-react/style/dark.css";
+
+@theme {
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", Consolas, Menlo, monospace;
+  --color-bg: #07080a;
+  --color-panel: #0d0f13;
+  --color-raise: #151920;
+  --color-line: #1f242d;
+  --color-ink: #d9dce1;
+  --color-dim: #7b8492;
+  --color-amber: #ffb000;
+  --color-up: #2bd47d;
+  --color-down: #ff5263;
+  --color-cyan: #55c8f2;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--color-line) transparent; }
+
+.flexlayout__layout {
+  --fl-color-background: var(--color-bg);
+  --fl-color-base: var(--color-panel);
+  --fl-color-1: var(--color-panel);
+  --fl-color-2: var(--color-raise);
+  --fl-color-3: var(--color-line);
+  --fl-color-tab-selected: var(--color-amber);
+  --fl-color-tab-unselected: var(--color-dim);
+  --fl-color-tab-selected-background: var(--color-raise);
+  --fl-color-tab-content: var(--color-panel);
+  --fl-color-tabset-background: var(--color-bg);
+  --fl-color-tabset-background-selected: var(--color-bg);
+  --fl-color-splitter: var(--color-bg);
+  --fl-color-splitter-hover: var(--color-amber);
+  --fl-color-splitter-drag: var(--color-amber);
+  --fl-color-drag-rect-border: var(--color-amber);
+  --fl-font-family: var(--font-mono);
+  --fl-font-size: 10.5px;
+}
+.flexlayout__tab { background: var(--color-panel); overflow: auto; }
+.flexlayout__tab_button { letter-spacing: 0.08em; }
+
+@keyframes flash-up { from { background: rgb(43 212 125 / 0.45); } to { background: transparent; } }
+@keyframes flash-down { from { background: rgb(255 82 99 / 0.45); } to { background: transparent; } }
+.flash-up { animation: flash-up 0.8s ease-out; }
+.flash-down { animation: flash-down 0.8s ease-out; }
+@media (prefers-reduced-motion: reduce) { .flash-up, .flash-down { animation: none; } }
+
+table.grid-table { width: 100%; border-collapse: collapse; }
+table.grid-table th {
+  position: sticky; top: 0; background: var(--color-panel); color: var(--color-dim);
+  font-weight: 500; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 5px 8px; border-bottom: 1px solid var(--color-line); white-space: nowrap;
+}
+table.grid-table td { padding: 4px 8px; border-bottom: 1px solid rgb(31 36 45 / 0.5); white-space: nowrap; }
+table.grid-table .r { text-align: right; }
+table.grid-table th.l, table.grid-table td.l { text-align: left; }

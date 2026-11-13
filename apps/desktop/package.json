@@ -1,0 +1,9 @@
+{
+  "name": "@qt/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "main": "main.cjs",
+  "devDependencies": {
+    "electron": "^45.3.1"
+  }
+}

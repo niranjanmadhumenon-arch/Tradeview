@@ -1,0 +1,54 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+/** Wraps a number and flashes green or red for a moment when it changes. */
+export function Flash({ value, children }: { value: number | null | undefined; children: ReactNode }) {
+  const prev = useRef(value);
+  const [cls, setCls] = useState("");
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = value;
+    if (before == null || value == null || before === value) return;
+    setCls(value > before ? "flash-up" : "flash-down");
+    const t = setTimeout(() => setCls(""), 800);
+    return () => clearTimeout(t);
+  }, [value]);
+  return <span className={`rounded-sm px-0.5 ${cls}`}>{children}</span>;
+}
+
+export function Empty({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
+      <div className="text-dim">{title}</div>
+      {hint && <div className="max-w-xs text-[10.5px] text-dim/70">{hint}</div>}
+    </div>
+  );
+}
+
+export function Seg<T extends string | number>({
+  label, value, options, onChange,
+}: {
+  label: string;
+  value: T | undefined;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5" role="group" aria-label={label}>
+      <span className="text-[10px] tracking-widest text-dim">{label}</span>
+      <div className="flex overflow-hidden rounded-sm border border-line">
+        {options.map((o) => (
+          <button
+            key={String(o.value)}
+            onClick={() => onChange(o.value)}
+            aria-pressed={o.value === value}
+            className={`px-2 py-1 text-[10.5px] transition-colors ${
+              o.value === value ? "bg-amber font-semibold text-black" : "text-dim hover:bg-raise hover:text-ink"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
