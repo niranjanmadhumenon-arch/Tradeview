@@ -4,6 +4,48 @@
   "version": "0.1.0",
   "main": "main.cjs",
   "devDependencies": {
-    "electron": "^45.3.1"
+    "electron": "45.3.1",
+    "electron-builder": "^26.18.0"
+  },
+  "description": "Read-only quantitative portfolio terminal",
+  "author": "Quant Terminal",
+  "build": {
+    "appId": "com.quantterminal.desktop",
+    "productName": "Quant Terminal",
+    "directories": {
+      "output": "../../release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      },
+      {
+        "from": "../../engine/dist/quant-engine",
+        "to": "engine"
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.finance"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

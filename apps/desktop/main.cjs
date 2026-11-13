@@ -27,7 +27,7 @@ function freePort() {
 
 function engineCommand() {
   if (app.isPackaged) {
-    // Phase 6: the engine ships as a PyInstaller binary next to the app.
+    // Installed app: the engine ships as a frozen binary in the app's resources.
     const bin = path.join(process.resourcesPath, "engine", WIN ? "quant-engine.exe" : "quant-engine");
     return { cmd: bin, args: [], cwd: path.dirname(bin) };
   }
@@ -58,7 +58,7 @@ async function startEngine() {
   });
 
   const url = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 120_000; // a first launch can be slow while the OS checks the engine
   while (Date.now() < deadline) {
     if (!engine) throw new Error("The engine exited during startup.");
     try {
@@ -69,12 +69,27 @@ async function startEngine() {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error("The engine did not start within 30 seconds.");
+  throw new Error("The engine did not start within two minutes.");
 }
 
 function stopEngine() {
   if (engine) engine.kill();
   engine = null;
+}
+
+function createSplash() {
+  const splash = new BrowserWindow({
+    width: 420, height: 180, frame: false, resizable: false, show: true,
+    backgroundColor: "#07080a", title: "Quant Terminal",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  const html = `<body style="margin:0;height:100vh;display:flex;flex-direction:column;justify-content:center;
+    align-items:center;background:#07080a;color:#d9dce1;font:12px Menlo,Consolas,monospace;gap:10px">
+    <div style="background:#ffb000;color:#000;font-weight:700;letter-spacing:.2em;padding:2px 8px">QT</div>
+    <div>Starting the analytics engine…</div>
+    <div style="color:#7b8492;font-size:11px">The first launch can take up to a minute.</div></body>`;
+  splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  return splash;
 }
 
 function createWindow({ url, token }) {
@@ -105,6 +120,7 @@ function createWindow({ url, token }) {
   });
 
   if (WEB_URL) win.loadURL(WEB_URL);
+  else if (app.isPackaged) win.loadFile(path.join(process.resourcesPath, "web", "index.html"));
   else win.loadFile(path.join(ROOT, "apps", "web", "dist", "index.html"));
 }
 
@@ -120,10 +136,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    const splash = createSplash();
     try {
-      createWindow(await startEngine());
+      const engineInfo = await startEngine();
+      createWindow(engineInfo);
+      splash.destroy();
     } catch (err) {
       quitting = true;
+      if (!splash.isDestroyed()) splash.destroy();
       stopEngine();
       dialog.showErrorBox("Quant Terminal could not start", err.message);
       app.quit();

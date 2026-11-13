@@ -32,7 +32,10 @@ app = create_app(
 
 
 def main() -> None:
-    uvicorn.run(app, host=config.host(), port=config.port(), log_level="info")
+    # Under the desktop shell the session token travels in the WebSocket URL,
+    # so request logging is switched off to keep it out of any log.
+    uvicorn.run(app, host=config.host(), port=config.port(), log_level="info",
+                access_log=config.token() is None)
 
 
 if __name__ == "__main__":

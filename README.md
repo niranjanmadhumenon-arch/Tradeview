@@ -23,6 +23,23 @@ npm start              # desktop app from a production build of the UI
 The desktop app starts the engine itself on a free local port and stops it on
 quit. Use **IMPORT CSV** in the ribbon to load an Upstox trade book.
 
+## Build an installer
+
+```bash
+npm run package        # .dmg on macOS, .exe installer on Windows, in release/
+```
+
+Each installer has to be built on its own system, because the Python engine is
+frozen into a native binary (with PyInstaller) and bundled into the app. The
+installed app needs neither Python nor Node. `.github/workflows/release.yml`
+builds both on GitHub (run it from the Actions tab or push a `v*` tag).
+
+The builds are not code-signed. On macOS, open the app the first time with
+right-click > Open; on Windows, choose "More info" > "Run anyway" on the
+SmartScreen prompt. Signing needs an Apple Developer ID and a Windows
+code-signing certificate. The first launch after installing can take up to a
+minute while the system checks the engine; later launches take a second or two.
+
 ## Engine on its own
 
 ```bash
@@ -85,6 +102,7 @@ Gemini API key from Google AI Studio once; it is saved in the system keychain.
 - [x] Live prices over WebSocket (Upstox feed adapter, delayed Yahoo fallback)
 - [x] Upstox token setup in the app, stored in the system keychain
 - [x] Gemini hedging memo with a check on every number it quotes
-- [ ] Packaging (macOS .dmg, Windows installer)
+- [x] Packaging: macOS .dmg built and tested; Windows installer configured but
+      not yet built or tested
 
 Metric formulas: [docs/metrics.md](docs/metrics.md)

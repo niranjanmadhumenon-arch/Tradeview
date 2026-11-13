@@ -12,6 +12,7 @@
     "start": "npm run build -w apps/web && node scripts/dev.mjs --built",
     "engine:setup": "node scripts/engine.mjs setup",
     "engine:dev": "node scripts/engine.mjs dev",
-    "engine:test": "node scripts/engine.mjs test"
+    "engine:test": "node scripts/engine.mjs test",
+    "package": "node scripts/package.mjs"
   }
 }
