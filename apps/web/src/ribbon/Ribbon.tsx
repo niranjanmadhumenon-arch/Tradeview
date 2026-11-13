@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Benchmark } from "../api/types";
-import { ticker } from "../format";
+import { feedLabel, ticker } from "../format";
 import type { Holding } from "../api/types";
 import { useStore } from "../state/store";
 
@@ -17,6 +17,7 @@ export function Ribbon() {
   const importCsv = useStore((s) => s.importCsv);
   const refreshPrices = useStore((s) => s.refreshPrices);
   const setPalette = useStore((s) => s.setPalette);
+  const feed = useStore((s) => s.live?.status);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
 
@@ -28,7 +29,13 @@ export function Ribbon() {
     setQuery("");
   };
   const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
-  const dot = status === "ok" ? "bg-up" : status === "down" ? "bg-down" : "bg-amber";
+  const live = feed?.state === "live";
+  const dot =
+    status === "down" || feed?.state === "error" ? "bg-down"
+    : status === "ok" && live && feed.source === "upstox" ? "bg-up"
+    : "bg-amber";
+  const label =
+    busy ? "CALC" : status === "down" ? "DOWN" : status !== "ok" ? "INIT" : feedLabel(feed);
 
   return (
     <header className="flex h-10 shrink-0 items-center gap-4 border-b border-line bg-panel px-3">
@@ -90,9 +97,9 @@ export function Ribbon() {
           }}
         />
         <span className="flex items-center gap-1.5 pl-1 text-[10px] tracking-widest text-dim"
-              title={`Engine ${status}`}>
+              title={feed?.detail || `Engine ${status}`}>
           <span className={`h-2 w-2 rounded-full ${dot} ${busy ? "animate-pulse" : ""}`} />
-          {busy ? "CALC" : status === "ok" ? "LIVE" : status === "down" ? "DOWN" : "INIT"}
+          {label}
         </span>
       </div>
     </header>

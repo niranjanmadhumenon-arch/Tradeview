@@ -1,4 +1,4 @@
-import type { CorporateAction, ImportResult, Portfolio, Settings, Trade } from "./types";
+import type { CorporateAction, ImportResult, LiveSnapshot, Portfolio, Settings, Trade } from "./types";
 
 declare global {
   interface Window {
@@ -44,3 +44,32 @@ export const api = {
     return call<ImportResult>("/api/ledger/import", { method: "POST", body: form });
   },
 };
+
+/** Opens the live tick stream and reconnects on its own if it drops. Returns a stop function. */
+export function openTicks(onSnapshot: (s: LiveSnapshot) => void, onDrop: () => void): () => void {
+  let ws: WebSocket | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const url = `${BASE.replace(/^http/, "ws")}/ws/ticks${TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : ""}`;
+  const connect = () => {
+    ws = new WebSocket(url);
+    ws.onmessage = (e) => {
+      try {
+        onSnapshot(JSON.parse(e.data) as LiveSnapshot);
+      } catch {
+        /* ignore a malformed frame */
+      }
+    };
+    ws.onclose = () => {
+      if (stopped) return;
+      onDrop();
+      timer = setTimeout(connect, 2000);
+    };
+  };
+  connect();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    ws?.close();
+  };
+}

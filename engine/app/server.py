@@ -6,7 +6,24 @@ import uvicorn
 from app import config
 from app.main import create_app
 
-app = create_app()
+
+def pick_feed():
+    """QT_FEED = auto (default) | upstox | yahoo | off. With `auto`, Upstox is
+    used when an access token is present, otherwise delayed Yahoo quotes."""
+    choice = config.feed_choice()
+    token = config.upstox_access_token()
+    if choice == "off":
+        return None
+    if choice == "upstox" or (choice == "auto" and token):
+        from app.market.feeds.upstox import UpstoxFeed
+
+        return UpstoxFeed(token or "", config.data_dir())
+    from app.market.feeds.yahoo_poll import YahooPollFeed
+
+    return YahooPollFeed()
+
+
+app = create_app(feed=pick_feed())
 
 
 def main() -> None:

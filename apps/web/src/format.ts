@@ -31,3 +31,14 @@ export function ticker(symbol: string): string {
 export function benchmarkName(b: string): string {
   return b === "^BSESN" ? "SENSEX" : "NIFTY 50";
 }
+
+export function signedPct(v: number, digits = 2): string {
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${num(Math.abs(v) * 100, digits)}%`;
+}
+
+export function feedLabel(status: { source: string; state: string } | undefined): string {
+  if (!status || status.state === "off") return "LAST CLOSE";
+  if (status.state === "error") return "FEED ERROR";
+  if (status.state === "connecting") return "CONNECTING";
+  return status.source === "upstox" ? "UPSTOX LIVE" : "DELAYED";
+}

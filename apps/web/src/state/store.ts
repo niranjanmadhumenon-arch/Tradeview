@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { api } from "../api/client";
-import type { CorporateAction, Portfolio, Settings, Trade } from "../api/types";
+import { api, openTicks } from "../api/client";
+import type { CorporateAction, LiveSnapshot, Portfolio, Settings, Trade } from "../api/types";
 
 type Status = "connecting" | "ok" | "down";
 
@@ -10,6 +10,7 @@ interface State {
   error: string | null;
   notice: string | null;
   portfolio: Portfolio | null;
+  live: LiveSnapshot | null;
   trades: Trade[];
   actions: CorporateAction[];
   selected: string | null;
@@ -26,6 +27,7 @@ interface State {
   dismiss: () => void;
 }
 
+let ticksOpen = false;
 let seq = 0; // drops responses that arrive after a newer request was sent
 
 export const useStore = create<State>((set, get) => ({
@@ -34,6 +36,7 @@ export const useStore = create<State>((set, get) => ({
   error: null,
   notice: null,
   portfolio: null,
+  live: null,
   trades: [],
   actions: [],
   selected: null,
@@ -45,6 +48,13 @@ export const useStore = create<State>((set, get) => ({
       try {
         await api.health();
         set({ status: "ok" });
+        if (!ticksOpen) {
+          ticksOpen = true;
+          openTicks(
+            (live) => set({ live }),
+            () => set((s) => (s.live ? { live: { ...s.live, status: { ...s.live.status, state: "connecting" } } } : {})),
+          );
+        }
         await get().reload(true);
         return;
       } catch {

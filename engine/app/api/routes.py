@@ -26,6 +26,13 @@ def require_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing engine token")
 
 
+def _poke(request: Request) -> None:
+    """Tell the live hub the ledger changed so clients get a fresh snapshot."""
+    hub = request.app.state.hub
+    if hub is not None:
+        hub.poke()
+
+
 router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
 
 
@@ -45,7 +52,8 @@ class ActionIn(BaseModel):
 
 
 @router.post("/ledger/import")
-async def import_ledger(file: UploadFile = File(...), session: Session = Depends(get_session)):
+async def import_ledger(request: Request, file: UploadFile = File(...),
+                        session: Session = Depends(get_session)):
     try:
         parsed = upstox.parse(await file.read())
     except ValueError as exc:
@@ -66,6 +74,7 @@ async def import_ledger(file: UploadFile = File(...), session: Session = Depends
             session.flush()
         imported += 1
     session.commit()
+    _poke(request)
     return {"imported": imported, "duplicates": duplicates, "skipped": parsed.skipped}
 
 
@@ -138,7 +147,7 @@ def list_actions(symbol: str | None = None, session: Session = Depends(get_sessi
 
 
 @router.post("/corporate-actions", status_code=201)
-def add_action(body: ActionIn, session: Session = Depends(get_session)):
+def add_action(body: ActionIn, request: Request, session: Session = Depends(get_session)):
     """Manual entry, mainly for bonus issues Yahoo has not recorded."""
     family = ("split", "bonus") if body.kind in ("split", "bonus") else ("dividend",)
     clash = session.scalar(
@@ -158,4 +167,5 @@ def add_action(body: ActionIn, session: Session = Depends(get_session)):
                              value=body.value, source="manual")
     session.add(action)
     session.commit()
+    _poke(request)
     return {"id": action.id}

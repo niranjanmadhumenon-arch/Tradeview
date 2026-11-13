@@ -73,3 +73,31 @@ export interface ImportResult {
   duplicates: number;
   skipped: string[];
 }
+
+export interface Quote {
+  ltp: number;
+  prev_close: number | null;
+  change: number | null;
+  change_pct: number | null;
+  ts: number;
+}
+
+export interface FeedStatus {
+  source: "upstox" | "yahoo-delayed" | "none" | string;
+  state: "connecting" | "live" | "error" | "off";
+  detail: string;
+}
+
+export interface LiveSnapshot {
+  type: "snapshot";
+  status: FeedStatus;
+  quotes: Record<string, Quote>;
+  portfolio: {
+    held: number;
+    priced: number;
+    value: number;
+    unrealized_pnl: number;
+    day_pnl: number | null;
+    holdings: Record<string, { value: number; unrealized_pnl: number; day_pnl: number | null }>;
+  } | null;
+}

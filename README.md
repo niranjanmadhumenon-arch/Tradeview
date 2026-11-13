@@ -38,6 +38,17 @@ Interactive API docs: http://127.0.0.1:8765/docs
 | `QT_PORT` | engine port | `8765` |
 | `QT_TOKEN` | if set, every `/api` call must send it as `X-QT-Token` | unset |
 | `QT_DATA_DIR` | where the SQLite ledger lives | per-user app data folder |
+| `QT_FEED` | live prices: `auto`, `upstox`, `yahoo` or `off` | `auto` |
+| `QT_UPSTOX_ACCESS_TOKEN` | Upstox access token for the live feed (expires daily) | unset |
+
+## Live prices
+
+The engine streams quotes and a mark-to-market snapshot over
+`ws://127.0.0.1:<port>/ws/ticks`. With `QT_FEED=auto` it uses the Upstox
+Market Data Feed V3 when `QT_UPSTOX_ACCESS_TOKEN` is set, and otherwise falls
+back to delayed Yahoo quotes polled every 15 seconds (shown as DELAYED in the
+ribbon). Set the token in the shell before `npm run dev`; it is read from the
+environment only and never stored. Risk metrics stay based on daily closes.
 
 ## Status
 
@@ -46,7 +57,8 @@ Interactive API docs: http://127.0.0.1:8765/docs
 - [x] Electron shell (starts and stops the engine, sandboxed renderer)
 - [x] React workspace (dockable panes, TradingView chart, risk inspector,
       command palette)
-- [ ] Upstox live ticks over WebSocket
+- [x] Live prices over WebSocket (Upstox feed adapter, delayed Yahoo fallback)
+- [ ] In-app Upstox login (the access token is set by hand for now)
 - [ ] Gemini hedging memo
 - [ ] Packaging (macOS .dmg, Windows installer)
 
