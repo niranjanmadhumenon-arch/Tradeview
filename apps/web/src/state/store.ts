@@ -15,6 +15,7 @@ interface State {
   actions: CorporateAction[];
   selected: string | null;
   paletteOpen: boolean;
+  upstoxOpen: boolean;
   layoutEpoch: number;
   init: () => Promise<void>;
   reload: (refresh?: boolean) => Promise<void>;
@@ -23,6 +24,7 @@ interface State {
   refreshPrices: () => Promise<void>;
   select: (symbol: string | null) => void;
   setPalette: (open: boolean) => void;
+  setUpstoxOpen: (open: boolean) => void;
   resetLayout: () => void;
   dismiss: () => void;
 }
@@ -41,6 +43,7 @@ export const useStore = create<State>((set, get) => ({
   actions: [],
   selected: null,
   paletteOpen: false,
+  upstoxOpen: false,
   layoutEpoch: 0,
 
   init: async () => {
@@ -118,6 +121,7 @@ export const useStore = create<State>((set, get) => ({
 
   select: (symbol) => set({ selected: symbol }),
   setPalette: (open) => set({ paletteOpen: open }),
+  setUpstoxOpen: (open) => set({ upstoxOpen: open }),
   resetLayout: () => set((s) => ({ layoutEpoch: s.layoutEpoch + 1 })),
   dismiss: () => set({ error: null, notice: null }),
 }));

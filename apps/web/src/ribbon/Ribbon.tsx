@@ -17,6 +17,7 @@ export function Ribbon() {
   const importCsv = useStore((s) => s.importCsv);
   const refreshPrices = useStore((s) => s.refreshPrices);
   const setPalette = useStore((s) => s.setPalette);
+  const setUpstoxOpen = useStore((s) => s.setUpstoxOpen);
   const feed = useStore((s) => s.live?.status);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -79,6 +80,10 @@ export function Ribbon() {
         <button onClick={() => setPalette(true)}
                 className="border border-line px-2 py-1 text-dim hover:border-amber hover:text-ink">
           COMMANDS <span className="text-dim/60">{mod}K</span>
+        </button>
+        <button onClick={() => setUpstoxOpen(true)}
+                className="border border-line px-2 py-1 text-dim hover:border-amber hover:text-ink">
+          UPSTOX
         </button>
         <button onClick={() => refreshPrices()} disabled={busy}
                 className="border border-line px-2 py-1 text-dim hover:border-amber hover:text-ink disabled:opacity-40">

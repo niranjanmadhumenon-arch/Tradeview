@@ -101,3 +101,9 @@ export interface LiveSnapshot {
     holdings: Record<string, { value: number; unrealized_pnl: number; day_pnl: number | null }>;
   } | null;
 }
+
+export interface UpstoxState {
+  configured: boolean;
+  source: "environment" | "keychain" | "memory" | null;
+  feed: FeedStatus;
+}

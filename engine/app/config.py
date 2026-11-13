@@ -49,8 +49,3 @@ def token() -> str | None:
 def feed_choice() -> str:
     return os.environ.get("QT_FEED", "auto").strip().lower()
 
-
-def upstox_access_token() -> str | None:
-    """Daily Upstox access token for the market data feed. Read from the
-    environment only; it is never written to the database or logged."""
-    return os.environ.get("QT_UPSTOX_ACCESS_TOKEN") or None

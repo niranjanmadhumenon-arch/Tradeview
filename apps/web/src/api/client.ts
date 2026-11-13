@@ -1,4 +1,4 @@
-import type { CorporateAction, ImportResult, LiveSnapshot, Portfolio, Settings, Trade } from "./types";
+import type { CorporateAction, ImportResult, LiveSnapshot, Portfolio, Settings, Trade, UpstoxState } from "./types";
 
 declare global {
   interface Window {
@@ -38,6 +38,14 @@ export const api = {
   trades: () => call<Trade[]>("/api/ledger/trades"),
   actions: () => call<CorporateAction[]>("/api/corporate-actions"),
   refreshMarket: () => call<{ warnings: string[] }>("/api/market/refresh", { method: "POST" }),
+  upstox: () => call<UpstoxState>("/api/upstox"),
+  saveUpstoxToken: (token: string) =>
+    call<UpstoxState>("/api/upstox/token", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+  removeUpstoxToken: () => call<UpstoxState>("/api/upstox/token", { method: "DELETE" }),
   importCsv: (file: File) => {
     const form = new FormData();
     form.append("file", file);

@@ -33,17 +33,28 @@ class LiveHub:
         self._dirty: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._tasks: list[asyncio.Task] = []
+        self._feed_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         self._dirty = asyncio.Event()
-        self._tasks = [asyncio.create_task(self._run_feed()), asyncio.create_task(self._broadcast())]
+        self._feed_task = asyncio.create_task(self._run_feed())
+        self._tasks = [asyncio.create_task(self._broadcast())]
 
     async def stop(self) -> None:
-        for task in self._tasks:
+        for task in [self._feed_task, *self._tasks]:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await asyncio.gather(self._feed_task, *self._tasks, return_exceptions=True)
         self._tasks = []
+
+    async def set_feed(self, feed: Feed) -> None:
+        """Swap the price source without restarting the engine (e.g. after the
+        Upstox token is saved or removed). Existing quotes are kept until replaced."""
+        self._feed_task.cancel()
+        await asyncio.gather(self._feed_task, return_exceptions=True)
+        self.feed = feed
+        self.set_status("connecting")
+        self._feed_task = asyncio.create_task(self._run_feed())
 
     # --- called by feed adapters (on the event loop) ---
 

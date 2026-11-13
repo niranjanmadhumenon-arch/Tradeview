@@ -17,6 +17,7 @@ dependencies = [
   "yfinance>=0.2.50",
   "platformdirs>=4.2",
   "python-multipart>=0.0.9",
+  "keyring>=25",
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,10 @@
 """Upstox Market Data Feed V3 adapter (streaming, read-only).
 
-Talks to exactly two Upstox endpoints: the feed authorize call and the public
-instrument list. It never touches order, portfolio or funds endpoints."""
+Talks to exactly two Upstox endpoints, both with GET: the feed authorize call
+and the public instrument list. It never touches trading, portfolio or funds
+endpoints. The intended credential is an Upstox Analytics Token: read-only,
+valid for a year, and unable to place or modify anything by design. A daily
+OAuth access token also works."""
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +25,13 @@ SEGMENTS = {"NS": ("NSE", "NSE_EQ"), "BO": ("BSE", "BSE_EQ")}
 
 class FeedAuthError(RuntimeError):
     retry_seconds = 60.0
+
+
+def _get(url: str, headers: dict[str, str] | None = None, timeout: float = 30) -> bytes:
+    """The only way this module talks to Upstox: a plain GET."""
+    request = urllib.request.Request(url, headers=headers or {}, method="GET")
+    with urllib.request.urlopen(request, timeout=timeout) as res:
+        return res.read()
 
 
 def build_instrument_map(rows: list[dict], segment: str) -> dict[str, str]:
@@ -63,8 +73,8 @@ class UpstoxFeed:
             pass
         maps: dict[str, dict[str, str]] = {}
         for exchange, segment in SEGMENTS.values():
-            with urllib.request.urlopen(INSTRUMENTS_URL.format(exchange=exchange), timeout=60) as res:
-                rows = json.loads(gzip.decompress(res.read()))
+            raw = _get(INSTRUMENTS_URL.format(exchange=exchange), timeout=60)
+            rows = json.loads(gzip.decompress(raw))
             maps[segment] = build_instrument_map(rows, segment)
         try:
             self._cache.write_text(json.dumps({"date": today, "maps": maps}))
@@ -73,19 +83,19 @@ class UpstoxFeed:
         return maps
 
     def _authorize(self) -> str:
-        request = urllib.request.Request(
-            AUTHORIZE_URL,
-            headers={"Authorization": f"Bearer {self._token}", "Accept": "application/json"},
-        )
+        if not self._token:
+            raise FeedAuthError("No Upstox token set. Add your Analytics Token under UPSTOX in the ribbon.")
+        headers = {"Authorization": f"Bearer {self._token}", "Accept": "application/json"}
         try:
-            with urllib.request.urlopen(request, timeout=20) as res:
-                body = json.loads(res.read())
+            body = json.loads(_get(AUTHORIZE_URL, headers, timeout=20))
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise FeedAuthError(
-                    "Upstox rejected the access token (it expires daily); set a fresh "
-                    "QT_UPSTOX_ACCESS_TOKEN and restart"
+                    "Upstox rejected the token. Generate a new Analytics Token in the "
+                    "Upstox Developer Apps page and save it under UPSTOX in the ribbon."
                 ) from exc
+            if exc.code == 429:
+                raise FeedAuthError("Upstox rate limit reached; retrying in a minute") from exc
             raise RuntimeError(f"Upstox feed authorize failed (HTTP {exc.code})") from exc
         url = (body.get("data") or {}).get("authorized_redirect_uri")
         if not url:
@@ -95,8 +105,9 @@ class UpstoxFeed:
     async def run(self, hub) -> None:
         import websockets
 
-        maps = await asyncio.to_thread(self._instrument_maps)
+        # The authorized address is single-use, so every (re)connect asks for a new one.
         url = await asyncio.to_thread(self._authorize)
+        maps = await asyncio.to_thread(self._instrument_maps)
         by_key: dict[str, str] = {}
 
         async with websockets.connect(url, max_size=None) as ws:

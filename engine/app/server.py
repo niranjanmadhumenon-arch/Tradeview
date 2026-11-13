@@ -5,13 +5,14 @@ import uvicorn
 
 from app import config
 from app.main import create_app
+from app.secrets import KeyringStore
 
 
-def pick_feed():
+def make_feed(store):
     """QT_FEED = auto (default) | upstox | yahoo | off. With `auto`, Upstox is
-    used when an access token is present, otherwise delayed Yahoo quotes."""
+    used when a token is saved, otherwise delayed Yahoo quotes."""
     choice = config.feed_choice()
-    token = config.upstox_access_token()
+    token = store.get()
     if choice == "off":
         return None
     if choice == "upstox" or (choice == "auto" and token):
@@ -23,7 +24,7 @@ def pick_feed():
     return YahooPollFeed()
 
 
-app = create_app(feed=pick_feed())
+app = create_app(token_store=KeyringStore(), feed_factory=make_feed)
 
 
 def main() -> None:

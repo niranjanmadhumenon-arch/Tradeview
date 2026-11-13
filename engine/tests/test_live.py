@@ -130,6 +130,57 @@ def test_feed_failure_becomes_status(tmp_path):
                                                    "detail": "token expired"}
 
 
+class NamedFeed(FakeFeed):
+    def __init__(self, name):
+        self.name = name
+
+    async def run(self, hub):
+        hub.set_status("live")
+        await asyncio.Event().wait()
+
+
+def test_saving_token_switches_feed_and_never_leaks_it(tmp_path):
+    from app.secrets import MemoryStore
+
+    store = MemoryStore()
+    factory = lambda s: NamedFeed("upstox" if s.get() else "yahoo-delayed")  # noqa: E731
+    secret = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.fake.fake"
+    with TestClient(make(tmp_path, token="", token_store=store, feed_factory=factory)) as client:
+        assert client.get("/api/upstox").json()["configured"] is False
+        assert client.put("/api/upstox/token", json={"token": "short"}).status_code == 422
+        assert client.put("/api/upstox/token", json={"token": "has a space " * 3}).status_code == 400
+
+        saved = client.put("/api/upstox/token", json={"token": f"  {secret}\n"})
+        assert saved.status_code == 200 and secret not in saved.text
+        assert saved.json()["configured"] is True and store.get() == secret
+        with client.websocket_connect("/ws/ticks") as ws:
+            assert ws.receive_json()["status"]["source"] == "upstox"
+        assert secret not in client.get("/api/upstox").text
+
+        removed = client.delete("/api/upstox/token").json()
+        assert removed["configured"] is False and store.get() is None
+        with client.websocket_connect("/ws/ticks") as ws:
+            assert ws.receive_json()["status"]["source"] == "yahoo-delayed"
+
+
+def test_upstox_feed_without_token_fails_before_any_network_call(tmp_path, monkeypatch):
+    from app.market.feeds import upstox
+
+    def no_network(*a, **k):
+        raise AssertionError("network must not be touched without a token")
+
+    monkeypatch.setattr(upstox, "_get", no_network)
+    with pytest.raises(upstox.FeedAuthError):
+        asyncio.run(upstox.UpstoxFeed("", tmp_path).run(hub=None))
+
+
+def test_upstox_module_is_get_only():
+    """An Analytics Token can only call GET endpoints, and so can this module."""
+    text = (Path(__file__).parents[1] / "app" / "market" / "feeds" / "upstox.py").read_text()
+    assert text.count("urlopen(") == 1 and 'method="GET"' in text
+    assert not [verb for verb in ('"POST"', '"PUT"', '"DELETE"', '"PATCH"', "data=") if verb in text]
+
+
 def test_source_has_no_trading_endpoints():
     """Zero-execution guarantee: the engine never references Upstox order,
     funds or portfolio APIs, only the market data feed and instrument list."""

@@ -68,6 +68,10 @@ export function Palette() {
                         onSelect={run(() => document.getElementById("qt-import")?.click())}>
             Import Upstox trade-book CSV
           </Command.Item>
+          <Command.Item className={item}
+                        onSelect={run(() => useStore.getState().setUpstoxOpen(true))}>
+            Connect Upstox live prices
+          </Command.Item>
           <Command.Item className={item} onSelect={run(() => refreshPrices())}>Refresh prices</Command.Item>
           <Command.Item className={item} onSelect={run(() => resetLayout())}>Reset layout</Command.Item>
         </Command.Group>

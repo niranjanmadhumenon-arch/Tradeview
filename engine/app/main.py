@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,10 +10,23 @@ from app import config
 from app.api.routes import router
 from app.db.models import make_sessionmaker
 from app.market.live import Feed, LiveHub
+from app.secrets import MemoryStore, TokenStore
 from app.ws.routes import router as ws_router
 
 
-def create_app(db_url: str | None = None, token: str | None = None, feed: Feed | None = None) -> FastAPI:
+def create_app(
+    db_url: str | None = None,
+    token: str | None = None,
+    feed: Feed | None = None,
+    token_store: TokenStore | None = None,
+    feed_factory: Callable[[TokenStore], Feed | None] | None = None,
+) -> FastAPI:
+    """`feed_factory` builds the price feed from the stored Upstox token and is
+    called again whenever that token changes. `feed` is a fixed feed for tests."""
+    store = token_store or MemoryStore()
+    factory = feed_factory or (lambda _store: feed)
+    first_feed = factory(store)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if app.state.hub:
@@ -21,10 +35,12 @@ def create_app(db_url: str | None = None, token: str | None = None, feed: Feed |
         if app.state.hub:
             await app.state.hub.stop()
 
-    app = FastAPI(title="Quant Terminal Engine", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Quant Terminal Engine", version="0.3.0", lifespan=lifespan)
     app.state.sessionmaker = make_sessionmaker(db_url or config.database_url())
     app.state.token = token if token is not None else config.token()
-    app.state.hub = LiveHub(app.state.sessionmaker, feed) if feed else None
+    app.state.token_store = store
+    app.state.feed_factory = factory
+    app.state.hub = LiveHub(app.state.sessionmaker, first_feed) if first_feed else None
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^(http://(localhost|127\.0\.0\.1)(:\d+)?|file://|null)$",

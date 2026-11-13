@@ -2,6 +2,8 @@
 are to the local ledger database (imports, manual corporate actions, settings)."""
 from __future__ import annotations
 
+import asyncio
+
 from datetime import date
 from typing import Literal
 
@@ -49,6 +51,53 @@ class ActionIn(BaseModel):
     ex_date: date
     kind: Literal["split", "bonus", "dividend"]
     value: float = Field(gt=0, description="Share multiplier for split/bonus; cash per share for dividend")
+
+
+class UpstoxTokenIn(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+
+
+def _upstox_state(request: Request) -> dict:
+    store, hub = request.app.state.token_store, request.app.state.hub
+    return {
+        "configured": store.get() is not None,
+        "source": store.source(),  # environment | keychain | None; the token itself is never returned
+        "feed": hub.status if hub else {"source": "none", "state": "off", "detail": "Live feed is off"},
+    }
+
+
+async def _restart_feed(request: Request) -> None:
+    app = request.app
+    feed = await asyncio.to_thread(app.state.feed_factory, app.state.token_store)
+    if app.state.hub is not None and feed is not None:
+        await app.state.hub.set_feed(feed)
+
+
+@router.get("/upstox")
+async def upstox_status(request: Request):
+    return await asyncio.to_thread(_upstox_state, request)
+
+
+@router.put("/upstox/token")
+async def save_upstox_token(body: UpstoxTokenIn, request: Request):
+    """Saves an Upstox Analytics Token to the system credential store and
+    switches the live feed to Upstox."""
+    token = body.token.strip()
+    if any(c.isspace() for c in token):
+        raise HTTPException(status_code=400, detail="That does not look like a token (it contains spaces)")
+    try:
+        await asyncio.to_thread(request.app.state.token_store.set, token)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    await _restart_feed(request)
+    return await asyncio.to_thread(_upstox_state, request)
+
+
+@router.delete("/upstox/token")
+async def remove_upstox_token(request: Request):
+    await asyncio.to_thread(request.app.state.token_store.clear)
+    await _restart_feed(request)
+    return await asyncio.to_thread(_upstox_state, request)
 
 
 @router.post("/ledger/import")

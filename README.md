@@ -39,16 +39,26 @@ Interactive API docs: http://127.0.0.1:8765/docs
 | `QT_TOKEN` | if set, every `/api` call must send it as `X-QT-Token` | unset |
 | `QT_DATA_DIR` | where the SQLite ledger lives | per-user app data folder |
 | `QT_FEED` | live prices: `auto`, `upstox`, `yahoo` or `off` | `auto` |
-| `QT_UPSTOX_ACCESS_TOKEN` | Upstox access token for the live feed (expires daily) | unset |
+| `QT_UPSTOX_TOKEN` | Upstox token; overrides the one saved in the app | unset |
 
 ## Live prices
 
 The engine streams quotes and a mark-to-market snapshot over
-`ws://127.0.0.1:<port>/ws/ticks`. With `QT_FEED=auto` it uses the Upstox
-Market Data Feed V3 when `QT_UPSTOX_ACCESS_TOKEN` is set, and otherwise falls
-back to delayed Yahoo quotes polled every 15 seconds (shown as DELAYED in the
-ribbon). Set the token in the shell before `npm run dev`; it is read from the
-environment only and never stored. Risk metrics stay based on daily closes.
+`ws://127.0.0.1:<port>/ws/ticks`. Risk metrics stay based on daily closes.
+
+**Upstox (real time).** Click **UPSTOX** in the ribbon and paste an Upstox
+*Analytics Token*. It is read-only, valid for one year, and cannot place or
+change orders, which matches this app's no-execution rule. Create it in the
+Upstox Developer Apps page under the Analytics tab. The token is saved in the
+system credential store (macOS Keychain, Windows Credential Manager), never in
+the database, and the feed switches to Upstox straight away. A daily OAuth
+access token also works but has to be replaced every day.
+
+**Yahoo (delayed).** With no token, quotes are polled from Yahoo every 15
+seconds and the ribbon shows DELAYED. `QT_FEED=upstox` disables this fallback.
+
+The engine only ever sends GET requests to Upstox: the feed authorize call and
+the public instrument list.
 
 ## Status
 
@@ -58,7 +68,7 @@ environment only and never stored. Risk metrics stay based on daily closes.
 - [x] React workspace (dockable panes, TradingView chart, risk inspector,
       command palette)
 - [x] Live prices over WebSocket (Upstox feed adapter, delayed Yahoo fallback)
-- [ ] In-app Upstox login (the access token is set by hand for now)
+- [x] Upstox token setup in the app, stored in the system keychain
 - [ ] Gemini hedging memo
 - [ ] Packaging (macOS .dmg, Windows installer)
 
