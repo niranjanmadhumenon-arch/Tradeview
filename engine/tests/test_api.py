@@ -80,3 +80,48 @@ def test_no_execution_surface(client):
     paths = list(client.get("/openapi.json").json()["paths"])
     assert "/api/metrics" in paths
     assert not [p for p in paths if banned.search(p)]
+
+
+def test_search_finds_stocks_by_name_and_ticker(client, upstox_csv, monkeypatch):
+    from app.market import search
+
+    calls = []
+
+    def fake_lookup(query, limit):
+        calls.append(query)
+        return [
+            {"symbol": "TATAMOTORS.NS", "longname": "Tata Motors Limited", "quoteType": "EQUITY"},
+            {"symbol": "TATAMOTORS.BO", "shortname": "TATA MOTORS LTD", "quoteType": "EQUITY"},
+            {"symbol": "TTM", "longname": "Tata Motors ADR", "quoteType": "EQUITY"},
+            {"symbol": "TATAGOLD.NS", "longname": "Tata Gold ETF", "quoteType": "ETF"},
+        ]
+
+    search._CACHE.clear()
+    monkeypatch.setattr(search, "yahoo_lookup", fake_lookup)
+    upload(client, upstox_csv)
+
+    data = client.get("/api/search", params={"q": "tata motors"}).json()
+    assert data["online"] is True
+    assert [r["symbol"] for r in data["results"]] == ["TATAMOTORS.NS", "TATAMOTORS.BO"]
+    assert data["results"][0] == {"symbol": "TATAMOTORS.NS", "name": "Tata Motors Limited",
+                                  "exchange": "NSE", "held": False}
+
+    client.get("/api/search", params={"q": "Tata  Motors"})
+    assert calls == ["tata motors"]  # repeated query is served from the cache
+
+    assert client.get("/api/search", params={"q": "  "}).json()["results"] == []
+
+
+def test_search_works_offline_from_the_ledger(client, upstox_csv, monkeypatch):
+    from app.market import search
+
+    def offline(query, limit):
+        raise ConnectionError("no network")
+
+    search._CACHE.clear()
+    monkeypatch.setattr(search, "yahoo_lookup", offline)
+    upload(client, upstox_csv)
+
+    data = client.get("/api/search", params={"q": "relia"}).json()
+    assert data["online"] is False
+    assert data["results"][0]["symbol"] == "RELIANCE.NS" and data["results"][0]["held"] is True

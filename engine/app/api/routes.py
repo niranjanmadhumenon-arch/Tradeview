@@ -19,6 +19,7 @@ from app.ai import memo as memo_ai
 from app.ai.gemini import InsightError
 from app.db.models import CorporateAction, Instrument, Memo, Trade
 from app.ledger import upstox
+from app.market import search as market_search
 from app.quant import service
 
 
@@ -149,6 +150,13 @@ def holdings(session: Session = Depends(get_session)):
     keys = ("as_of", "portfolio_value", "net_delta", "realized_pnl", "unrealized_pnl",
             "dividends", "holdings", "warnings")
     return {k: data[k] for k in keys}
+
+
+@router.get("/search")
+def search_stocks(q: str = Query("", max_length=64), limit: int = Query(10, ge=1, le=25),
+                  session: Session = Depends(get_session)):
+    """Find a stock by company name or ticker: ledger instruments plus NSE/BSE listings."""
+    return market_search.search(session, q, limit)
 
 
 @router.get("/metrics")

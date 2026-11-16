@@ -21,7 +21,9 @@ npm start              # desktop app from a production build of the UI
 ```
 
 The desktop app starts the engine itself on a free local port and stops it on
-quit. Use **IMPORT CSV** in the ribbon to load an Upstox trade book.
+quit. Use **IMPORT CSV** in the ribbon to load an Upstox trade book. The search
+bar in the ribbon finds any NSE or BSE stock by company name or ticker (press
+`/` to focus it); without a network it still searches the stocks in your ledger.
 
 ## Build an installer
 

@@ -1,34 +1,22 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import type { Benchmark } from "../api/types";
-import { feedLabel, ticker } from "../format";
-import type { Holding } from "../api/types";
+import { feedLabel } from "../format";
 import { useStore } from "../state/store";
-
-const NONE: Holding[] = [];
 import { Seg } from "../ui";
+import { SearchBox } from "./SearchBox";
 
 export function Ribbon() {
   const status = useStore((s) => s.status);
   const busy = useStore((s) => s.busy);
   const params = useStore((s) => s.portfolio?.params);
-  const holdings = useStore((s) => s.portfolio?.holdings) ?? NONE;
   const setParam = useStore((s) => s.setParam);
-  const select = useStore((s) => s.select);
   const importCsv = useStore((s) => s.importCsv);
   const refreshPrices = useStore((s) => s.refreshPrices);
   const setPalette = useStore((s) => s.setPalette);
   const setUpstoxOpen = useStore((s) => s.setUpstoxOpen);
   const feed = useStore((s) => s.live?.status);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
 
-  const go = () => {
-    const q = query.trim().toUpperCase();
-    if (!q) return;
-    const held = holdings.find((h) => ticker(h.symbol) === q || h.symbol === q);
-    select(held ? held.symbol : q.includes(".") ? q : `${q}.NS`);
-    setQuery("");
-  };
   const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
   const live = feed?.state === "live";
   const dot =
@@ -45,20 +33,7 @@ export function Ribbon() {
         <span className="hidden text-[10px] tracking-widest text-dim lg:inline">READ-ONLY</span>
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); go(); }} className="flex items-center">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="TICKER"
-          aria-label="Ticker search"
-          list="qt-tickers"
-          spellCheck={false}
-          className="w-32 border border-line bg-bg px-2 py-1 uppercase text-amber outline-none placeholder:text-dim/60 focus:border-amber"
-        />
-        <datalist id="qt-tickers">
-          {holdings.map((h) => <option key={h.symbol} value={ticker(h.symbol)} />)}
-        </datalist>
-      </form>
+      <SearchBox />
 
       <Seg<Benchmark>
         label="BENCH" value={params?.benchmark}
@@ -76,7 +51,7 @@ export function Ribbon() {
         onChange={(v) => setParam({ horizon_days: v })}
       />
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap">
         <button onClick={() => setPalette(true)}
                 className="border border-line px-2 py-1 text-dim hover:border-amber hover:text-ink">
           COMMANDS <span className="text-dim/60">{mod}K</span>

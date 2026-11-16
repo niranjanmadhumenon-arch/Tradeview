@@ -122,3 +122,16 @@ export interface Memo {
   payload: Record<string, unknown>;
   unverified_numbers: string[];
 }
+
+export interface SearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  held: boolean;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+  online: boolean;
+}

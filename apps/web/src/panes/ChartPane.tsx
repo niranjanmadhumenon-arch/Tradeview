@@ -9,7 +9,7 @@ function tvSymbol(symbol: string): string {
 
 export function ChartPane() {
   const selected = useStore((s) => s.selected);
-  if (!selected) return <Empty title="No symbol selected" hint="Pick a holding or search a ticker in the ribbon." />;
+  if (!selected) return <Empty title="No symbol selected" hint="Pick a holding or search a stock by name in the ribbon." />;
   const params = new URLSearchParams({
     symbol: tvSymbol(selected),
     interval: "D",

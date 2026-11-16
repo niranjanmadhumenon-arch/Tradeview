@@ -1,4 +1,4 @@
-import type { CorporateAction, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, Settings, Trade, UpstoxState } from "./types";
+import type { CorporateAction, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, SearchResponse, Settings, Trade, UpstoxState } from "./types";
 
 declare global {
   interface Window {
@@ -35,6 +35,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   metrics: (refresh: boolean) => call<Portfolio>(`/api/metrics?refresh=${refresh}`),
+  search: (q: string) => call<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`),
   trades: () => call<Trade[]>("/api/ledger/trades"),
   actions: () => call<CorporateAction[]>("/api/corporate-actions"),
   refreshMarket: () => call<{ warnings: string[] }>("/api/market/refresh", { method: "POST" }),
