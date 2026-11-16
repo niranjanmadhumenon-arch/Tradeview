@@ -5,11 +5,14 @@ import { ChartPane } from "../panes/ChartPane";
 import { CovariancePane } from "../panes/CovariancePane";
 import { HoldingsPane } from "../panes/HoldingsPane";
 import { InsightPane } from "../panes/InsightPane";
+import { OptimizerPane } from "../panes/OptimizerPane";
 import { RiskPane } from "../panes/RiskPane";
+import { StressPane } from "../panes/StressPane";
 import { TradesPane } from "../panes/TradesPane";
+import { WatchlistPane } from "../panes/WatchlistPane";
 import { useStore } from "../state/store";
 
-const KEY = "qt.layout.v2";
+const KEY = "qt.layout.v4"; // v4 adds STRESS TEST
 
 const DEFAULT: IJsonModel = {
   global: { tabEnableClose: false, tabSetEnableMaximize: true, tabSetMinWidth: 180, tabSetMinHeight: 120 },
@@ -22,6 +25,7 @@ const DEFAULT: IJsonModel = {
           { type: "tab", name: "HOLDINGS", component: "holdings" },
           { type: "tab", name: "TRADES", component: "trades" },
           { type: "tab", name: "CORP ACTIONS", component: "actions" },
+          { type: "tab", name: "WATCHLIST", component: "watchlist" },
         ],
       },
       {
@@ -29,12 +33,14 @@ const DEFAULT: IJsonModel = {
         children: [
           { type: "tab", name: "CHART", component: "chart" },
           { type: "tab", name: "COVARIANCE", component: "covariance" },
+          { type: "tab", name: "OPTIMIZER", component: "optimizer" },
         ],
       },
       {
         type: "tabset", weight: 24,
         children: [
           { type: "tab", name: "RISK", component: "risk" },
+          { type: "tab", name: "STRESS TEST", component: "stress" },
           { type: "tab", name: "AI INSIGHT", component: "insight" },
         ],
       },
@@ -50,6 +56,9 @@ const PANES: Record<string, () => React.JSX.Element> = {
   covariance: CovariancePane,
   risk: RiskPane,
   insight: InsightPane,
+  watchlist: WatchlistPane,
+  optimizer: OptimizerPane,
+  stress: StressPane,
 };
 
 function loadModel(fresh: boolean): Model {

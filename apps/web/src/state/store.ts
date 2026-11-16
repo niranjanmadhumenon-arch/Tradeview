@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, openTicks } from "../api/client";
-import type { CorporateAction, LiveSnapshot, Portfolio, Settings, Trade, TradeInput } from "../api/types";
+import { setDisplay } from "../format";
+import type { WatchItem, CorporateAction, LiveSnapshot, Portfolio, Settings, Trade, TradeInput } from "../api/types";
 
 type Status = "connecting" | "ok" | "down";
 
@@ -15,24 +16,37 @@ interface State {
   actions: CorporateAction[];
   selected: string | null;
   paletteOpen: boolean;
-  upstoxOpen: boolean;
+  connectOpen: boolean;
+  reviewOpen: boolean;
+  watch: WatchItem[];
+  setReviewOpen: (open: boolean) => void;
+  loadWatchlist: () => Promise<void>;
+  toggleStar: (symbol: string, name?: string) => Promise<void>;
+  openSymbol: (symbol: string, name?: string, exchange?: string) => void;
+  /** Exchange each symbol was picked from in the search (NASDAQ, NYSE...), for the chart. */
+  exchanges: Record<string, string>;
+  bondsOpen: boolean;
   layoutEpoch: number;
   init: () => Promise<void>;
   reload: (refresh?: boolean) => Promise<void>;
   setParam: (patch: Partial<Settings>) => Promise<void>;
-  importCsv: (file: File) => Promise<void>;
+  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number) => Promise<void>;
+  importOpen: boolean;
+  setImportOpen: (open: boolean) => void;
   exportCsv: () => Promise<void>;
   saveTrade: (input: TradeInput, id?: number) => Promise<boolean>;
   removeTrade: (id: number) => Promise<void>;
   refreshPrices: () => Promise<void>;
   select: (symbol: string | null) => void;
   setPalette: (open: boolean) => void;
-  setUpstoxOpen: (open: boolean) => void;
+  setConnectOpen: (open: boolean) => void;
+  setBondsOpen: (open: boolean) => void;
   resetLayout: () => void;
   dismiss: () => void;
 }
 
 let ticksOpen = false;
+let promptedReviews = 0;
 let seq = 0; // drops responses that arrive after a newer request was sent
 
 export const useStore = create<State>((set, get) => ({
@@ -46,7 +60,35 @@ export const useStore = create<State>((set, get) => ({
   actions: [],
   selected: null,
   paletteOpen: false,
-  upstoxOpen: false,
+  connectOpen: false,
+  reviewOpen: false,
+  importOpen: false,
+  setImportOpen: (open) => set({ importOpen: open }),
+  watch: [],
+  setReviewOpen: (open) => set({ reviewOpen: open }),
+  loadWatchlist: async () => {
+    try {
+      set({ watch: await api.watchlist() });
+    } catch {
+      /* the watchlist is optional */
+    }
+  },
+  toggleStar: async (symbol, name) => {
+    const starred = get().watch.some((w) => w.symbol === symbol && w.starred);
+    try {
+      const r = await api.star(symbol, !starred, name);
+      set({ watch: r.watchlist, notice: r.warning ?? (starred ? `${symbol} unstarred` : `${symbol} starred; prices cached`) });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+  exchanges: {},
+  openSymbol: (symbol, name, exchange) => {
+    set((s) => ({ selected: symbol, exchanges: exchange ? { ...s.exchanges, [symbol]: exchange } : s.exchanges }));
+    // Remember it and cache its prices, so the next look is served locally.
+    api.viewed(symbol, name).then(() => get().loadWatchlist()).catch(() => {});
+  },
+  bondsOpen: false,
   layoutEpoch: 0,
 
   init: async () => {
@@ -62,6 +104,7 @@ export const useStore = create<State>((set, get) => ({
           );
         }
         await get().reload(true);
+        get().loadWatchlist();
         return;
       } catch {
         await new Promise((r) => setTimeout(r, 500));
@@ -78,7 +121,12 @@ export const useStore = create<State>((set, get) => ({
       const [trades, actions] = await Promise.all([api.trades(), api.actions()]);
       if (mine !== seq) return;
       const selected = get().selected ?? portfolio.holdings[0]?.symbol ?? null;
+      setDisplay(portfolio.display);
       set({ portfolio, trades, actions, selected, status: "ok", error: null });
+      // New splits or bonuses to confirm: open the check once per new batch.
+      const pending = portfolio.pending_reviews ?? 0;
+      if (pending > promptedReviews) set({ reviewOpen: true });
+      promptedReviews = pending;
     } catch (e) {
       if (mine === seq) set({ error: (e as Error).message });
     } finally {
@@ -98,11 +146,12 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  importCsv: async (file) => {
+  importCsv: async (file, columns, headerRow) => {
     set({ busy: true, error: null });
     try {
-      const r = await api.importCsv(file);
-      const parts = [`${r.imported} trades imported`];
+      const r = await api.importCsv(file, columns, headerRow);
+      const from = r.broker ? ` from ${r.broker[0].toUpperCase()}${r.broker.slice(1)}` : "";
+      const parts = [`${r.imported} trades imported${from}`];
       if (r.updated) parts.push(`${r.updated} updated from the file`);
       if (r.duplicates) parts.push(`${r.duplicates} already in ledger`);
       if (r.skipped.length) parts.push(`${r.skipped.length} rows skipped`);
@@ -165,7 +214,8 @@ export const useStore = create<State>((set, get) => ({
 
   select: (symbol) => set({ selected: symbol }),
   setPalette: (open) => set({ paletteOpen: open }),
-  setUpstoxOpen: (open) => set({ upstoxOpen: open }),
+  setConnectOpen: (open) => set({ connectOpen: open }),
+  setBondsOpen: (open) => set({ bondsOpen: open }),
   resetLayout: () => set((s) => ({ layoutEpoch: s.layoutEpoch + 1 })),
   dismiss: () => set({ error: null, notice: null }),
 }));

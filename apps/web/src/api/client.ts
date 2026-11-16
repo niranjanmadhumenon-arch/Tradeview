@@ -1,4 +1,4 @@
-import type { BenchmarkOption, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, SearchResponse, Settings, Trade, UpstoxState } from "./types";
+import type { ImportFormats, ImportPreview, StressResult, ActionReview, CacheStatus, OptimizerResult, WatchItem, AssetClass, BenchmarkOption, Bond, BondInput, BseSyncResult, ConnectionsState, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, PriceSource, SearchResponse, Settings, SourceId, SyncResult, Trade } from "./types";
 
 declare global {
   interface Window {
@@ -25,6 +25,10 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function json<T>(method: string, path: string, body: unknown): Promise<T> {
+  return call<T>(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
 export const api = {
   health: () => call<{ status: string }>("/health"),
   settings: () => call<Settings>("/api/settings"),
@@ -35,7 +39,8 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   metrics: (refresh: boolean) => call<Portfolio>(`/api/metrics?refresh=${refresh}`),
-  search: (q: string) => call<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, market = "ALL") =>
+    call<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}&market=${market}`),
   trades: () => call<Trade[]>("/api/ledger/trades"),
   benchmarks: (q: string) =>
     call<{ results: BenchmarkOption[]; online: boolean }>(`/api/benchmarks?q=${encodeURIComponent(q)}`),
@@ -63,14 +68,49 @@ export const api = {
   },
   actions: () => call<CorporateAction[]>("/api/corporate-actions"),
   refreshMarket: () => call<{ warnings: string[] }>("/api/market/refresh", { method: "POST" }),
-  upstox: () => call<UpstoxState>("/api/upstox"),
-  saveUpstoxToken: (token: string) =>
-    call<UpstoxState>("/api/upstox/token", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    }),
-  removeUpstoxToken: () => call<UpstoxState>("/api/upstox/token", { method: "DELETE" }),
+  connections: () => call<ConnectionsState>("/api/connections"),
+  setPriceSource: (source: PriceSource) => json<ConnectionsState>("PUT", "/api/connections/price-source", { source }),
+  saveCredentials: (id: SourceId, values: Record<string, string>) =>
+    json<ConnectionsState>("PUT", `/api/connections/${id}/credentials`, { values }),
+  removeCredentials: (id: SourceId) =>
+    call<ConnectionsState>(`/api/connections/${id}/credentials`, { method: "DELETE" }),
+  loginUrl: (id: SourceId) => call<{ url: string }>(`/api/connections/${id}/login-url`),
+  openSession: (id: SourceId, value?: string) =>
+    json<ConnectionsState>("POST", `/api/connections/${id}/session`, { value: value || null }),
+  closeSession: (id: SourceId) => call<ConnectionsState>(`/api/connections/${id}/session`, { method: "DELETE" }),
+  sync: (id: SourceId) => call<SyncResult>(`/api/connections/${id}/sync`, { method: "POST" }),
+  bonds: () => call<Bond[]>("/api/bonds"),
+  saveBond: (id: string, bond: BondInput) => json<Bond>("PUT", `/api/bonds/${encodeURIComponent(id)}`, bond),
+  deleteBond: (symbol: string) => call<{ deleted: string }>(`/api/bonds/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
+  setAssetClass: (symbol: string, asset_class: AssetClass | "") =>
+    json<{ symbol: string; asset_class: AssetClass }>("PUT", `/api/instruments/${encodeURIComponent(symbol)}/asset-class`, { asset_class }),
+  bseSync: () => call<BseSyncResult>("/api/corporate-actions/bse-sync", { method: "POST" }),
+  reviews: () => call<ActionReview[]>("/api/corporate-actions/review"),
+  decideReview: (id: number, decision: "apply" | "skip") =>
+    json<{ id: number; review: string }>("POST", `/api/corporate-actions/${id}/review`, { decision }),
+  acceptSuggestions: () =>
+    call<{ decided: { id: number; decision: string }[]; remaining: number }>(
+      "/api/corporate-actions/review/accept-suggestions", { method: "POST" }),
+  watchlist: () => call<WatchItem[]>("/api/watchlist"),
+  star: (symbol: string, starred: boolean, name?: string) =>
+    json<{ watchlist: WatchItem[]; warning: string | null }>("PUT", `/api/watchlist/${encodeURIComponent(symbol)}`, { starred, name }),
+  unwatch: (symbol: string) => call<WatchItem[]>(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
+  viewed: (symbol: string, name?: string) =>
+    json<{ symbol: string; warning: string | null }>("POST", `/api/watchlist/${encodeURIComponent(symbol)}/view`, { name }),
+  cache: () => call<CacheStatus>("/api/cache"),
+  prices: (symbol: string, days = 730) =>
+    call<{ symbol: string; currency: string; warning: string | null;
+           bars: { date: string; close: number; adj_close: number }[] }>(
+      `/api/prices/${encodeURIComponent(symbol)}?days=${days}`),
+  pricesCsv: async (symbol: string) => {
+    const headers = new Headers();
+    if (TOKEN) headers.set("X-QT-Token", TOKEN);
+    const res = await fetch(`${BASE}/api/prices/${encodeURIComponent(symbol)}/csv`, { headers });
+    if (!res.ok) throw new Error("Nothing cached for this symbol yet");
+    return res.blob();
+  },
+  optimize: (body: { symbols?: string[]; include_holdings?: boolean; lookback_days?: number; max_weight?: number }) =>
+    json<OptimizerResult>("POST", "/api/optimizer", body),
   insight: () => call<InsightState>("/api/insight"),
   saveInsightKey: (key: string) =>
     call<InsightState>("/api/insight/key", {
@@ -82,11 +122,27 @@ export const api = {
   insightPreview: () => call<Record<string, unknown>>("/api/insight/preview"),
   createMemo: () => call<Memo>("/api/insight/memo", { method: "POST" }),
   memos: () => call<Memo[]>("/api/insight/memos"),
-  importCsv: (file: File) => {
+  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number) => {
     const form = new FormData();
     form.append("file", file);
+    if (columns) form.append("columns", JSON.stringify(columns));
+    if (headerRow != null) form.append("header_row", String(headerRow));
     return call<ImportResult>("/api/ledger/import", { method: "POST", body: form });
   },
+  importPreview: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return call<ImportPreview>("/api/ledger/import/preview", { method: "POST", body: form });
+  },
+  importFormats: () => call<ImportFormats>("/api/ledger/import/formats"),
+  importTemplate: async () => {
+    const headers = new Headers();
+    if (TOKEN) headers.set("X-QT-Token", TOKEN);
+    const res = await fetch(`${BASE}/api/ledger/import/template`, { headers });
+    return res.blob();
+  },
+  stress: (body: { shock_pct?: number; horizon_days?: number; simulations?: number; history?: boolean }) =>
+    json<StressResult>("POST", "/api/stress", body),
 };
 
 /** Opens the live tick stream and reconnects on its own if it drops. Returns a stop function. */
