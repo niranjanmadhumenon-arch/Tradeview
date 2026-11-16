@@ -174,3 +174,19 @@ def test_display_currency_converts_and_auto_picks_the_biggest(client):
     client.put("/api/settings", json={"display_currency": "AUTO"})
     assert client.get("/api/metrics").json()["display"]["currency"] == "USD"
     assert client.put("/api/settings", json={"display_currency": "XYZ"}).status_code == 400
+
+
+def test_stress_covers_rallies_and_the_upside(client):
+    buy(client, "RELIANCE.NS", 10, 1000.0)
+    buy(client, "TCS.NS", 5, 3000.0)
+    r = client.post("/api/stress", json={"shock_pct": 25, "horizon_days": 21, "simulations": 2000}).json()
+    assert r["custom"]["shock"] == 0.25 and r["custom"]["pnl"] > 0          # a rally gains
+    assert {s["shock"] for s in r["shocks"]} >= {-0.40, -0.10, 0.10, 0.40}
+    ups = [s for s in r["shocks"] if s["shock"] > 0]
+    assert all(s["pnl"] > 0 for s in ups) and ups == sorted(ups, key=lambda s: s["shock"])
+    assert {c["kind"] for c in r["crises"]} == {"crash", "rally"}
+    covid_rally = next(c for c in r["crises"] if c["id"] == "covidrally")
+    assert covid_rally["available"] and covid_rally["market_move"] > 0       # 62 -> 120 in the fake
+    mc = r["monte_carlo"]
+    assert mc["expected_gain_95"] >= mc["percentiles"]["p95"] > 0
+    assert set(mc["prob_gain"]) == {"5", "10", "20", "30"}

@@ -10,8 +10,10 @@ from app import config
 from app.ai import gemini
 from app.api.assets import router as assets_router
 from app.api.connections import router as connections_router
+from app.api.news import router as news_router
 from app.api.stress import router as stress_router
 from app.api.watch import router as watch_router
+from app.api.wealth import router as wealth_router
 from app.api.routes import router
 from app.brokers.registry import PRICE_SOURCE_KEY, FeedContext, build_sources
 from sqlalchemy import select
@@ -91,5 +93,7 @@ def create_app(
     app.include_router(assets_router)
     app.include_router(watch_router)
     app.include_router(stress_router)
+    app.include_router(news_router)
+    app.include_router(wealth_router)
     app.include_router(ws_router)
     return app

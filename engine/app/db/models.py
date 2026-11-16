@@ -94,14 +94,69 @@ class Memo(Base):
 
 
 class Watch(Base):
-    """Starred stocks (the watchlist, marked * in the UI) and stocks looked at
-    recently. Their daily prices are kept in the local cache."""
+    """One row per stock the user has marked or looked at:
+      * watched: on the watchlist (eye icon); prices are cached locally
+      * starred: picked for the optimizer (star icon); prices are cached locally
+      * viewed_at: last opened from the search (the History tab); nothing is downloaded for it"""
 
     __tablename__ = "watchlist"
     symbol: Mapped[str] = mapped_column(String, primary_key=True)
     starred: Mapped[bool] = mapped_column(default=False)
+    watched: Mapped[bool] = mapped_column(default=False)
     added_at: Mapped[datetime] = mapped_column(DateTime)
     viewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+
+class WealthItem(Base):
+    """Something you own outside the market portfolio: cash, fixed and recurring
+    deposits, pension savings (EPF, PPF, NPS, other) and insurance policies.
+
+    `amount` is the current balance (cash, PPF, EPF, NPS, pension, policy fund or
+    surrender value) or, for a fixed deposit, the principal, whose value then
+    accrues at `rate` from `start_date`. `cover` is a policy's sum assured, which
+    protects but is not net worth. Values are in INR."""
+
+    __tablename__ = "wealth_items"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String, default="")
+    institution: Mapped[str] = mapped_column(String, default="")
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    rate: Mapped[float] = mapped_column(Float, default=0.0)            # annual %, for growth and projections
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    maturity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    monthly_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    cover: Mapped[float] = mapped_column(Float, default=0.0)           # insurance sum assured
+    premium: Mapped[float] = mapped_column(Float, default=0.0)         # insurance premium per year
+    notes: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class CashWithdrawal(Base):
+    """Money taken out of the dividend cash balance. Dividends and bond coupons
+    are held as cash in the portfolio until a withdrawal is recorded here."""
+
+    __tablename__ = "cash_withdrawals"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[float] = mapped_column(Float)                       # INR
+    note: Mapped[str] = mapped_column(String, default="")
+
+
+class NewsItem(Base):
+    """A headline for one symbol, kept so the NEWS tab can be reopened without
+    downloading again (refreshed at most every 30 minutes). `source` is the feed
+    it came from (app.market.news_sources.SOURCES: yahoo, google, et, ...)."""
+
+    __tablename__ = "news"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    summary: Mapped[str] = mapped_column(String, default="")
+    publisher: Mapped[str] = mapped_column(String, default="")
+    url: Mapped[str] = mapped_column(String, default="")
+    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    source: Mapped[str] = mapped_column(String, default="yahoo")
 
 
 class Setting(Base):
@@ -131,7 +186,12 @@ _ADDED_COLUMNS = {
                     "currency": "VARCHAR NOT NULL DEFAULT ''"},
     "trades": {"imported_at": "DATETIME"},
     "corporate_actions": {"review": "VARCHAR NOT NULL DEFAULT ''"},
+    "watchlist": {"watched": "BOOLEAN NOT NULL DEFAULT 0"},
+    "news": {"source": "VARCHAR NOT NULL DEFAULT 'yahoo'"},
 }
+# Run once, right after a column is added. Before the eye icon existed, starring
+# a stock also put it on the watchlist, so those stay watched.
+_AFTER_ADD = {("watchlist", "watched"): "UPDATE watchlist SET watched = starred"}
 
 
 def _migrate(engine) -> None:
@@ -141,6 +201,8 @@ def _migrate(engine) -> None:
             for name, ddl in columns.items():
                 if name not in have:
                     conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}'))
+                    if (table, name) in _AFTER_ADD:
+                        conn.execute(text(_AFTER_ADD[(table, name)]))
 
 
 def make_sessionmaker(url: str) -> sessionmaker:

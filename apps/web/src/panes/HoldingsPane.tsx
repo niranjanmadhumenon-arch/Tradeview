@@ -91,6 +91,7 @@ export function HoldingsPane() {
              cls={tone(full ? lp.day_pnl : null)} />
         <Row label="UNREALIZED" value={signed(unrealized)} n={unrealized} cls={tone(unrealized)} />
         <Row label="REALIZED" value={signed(portfolio?.realized_pnl)} cls={tone(portfolio?.realized_pnl)} />
+        <Row label="PORTFOLIO CASH" value={inr(portfolio?.portfolio_cash)} n={portfolio?.portfolio_cash} cls="text-up" />
         <Row label="TOTAL RETURN" value={pct(portfolio?.returns?.total_return_pct)} n={portfolio?.returns?.total_return}
              cls={tone(portfolio?.returns?.total_return)} />
         <Row label="XIRR" value={pct(portfolio?.returns?.xirr)} n={portfolio?.returns?.xirr}

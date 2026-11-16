@@ -17,8 +17,10 @@ the risk metrics:
 4. Correlation breakdown. In crashes, correlations rise and diversification
    fails. VaR is recomputed with every pairwise correlation moved halfway to 1.
 
-None of these is a forecast: they describe what the past relationships between
-your holdings imply under stress."""
+Each view covers both directions: market rallies as well as falls, past bull
+runs as well as crashes, and the good tail of the simulations as well as the
+bad one. None of these is a forecast: they describe what the past relationships
+between your holdings imply."""
 from __future__ import annotations
 
 import math
@@ -34,7 +36,14 @@ CRISES = (
     ("covid", "2020 COVID crash", date(2020, 1, 17), date(2020, 3, 23)),
     ("rates", "2022 rate-hike sell-off", date(2021, 10, 18), date(2022, 6, 17)),
 )
-DEFAULT_SHOCKS = (-0.05, -0.10, -0.20, -0.30, -0.40)
+# Rallies, replayed the same way, for the upside view.
+RALLIES = (
+    ("recovery09", "2009 post-crisis recovery", date(2009, 3, 9), date(2010, 11, 5)),
+    ("election14", "2014 election rally", date(2013, 8, 28), date(2015, 3, 3)),
+    ("covidrally", "2020-21 post-COVID rally", date(2020, 3, 23), date(2021, 10, 18)),
+    ("rally23", "2023-24 rally", date(2023, 3, 28), date(2024, 9, 26)),
+)
+DEFAULT_SHOCKS = (-0.40, -0.30, -0.20, -0.10, -0.05, 0.05, 0.10, 0.20, 0.30, 0.40)
 
 
 def betas(asset: np.ndarray, market: np.ndarray) -> np.ndarray:
@@ -83,12 +92,14 @@ def monte_carlo(values: np.ndarray, asset: np.ndarray, horizon: int, n: int = 10
     pct = np.percentile(pnl, [1, 5, 25, 50, 75, 95, 99])
     es95 = float(pnl[pnl <= pct[1]].mean())
     es99 = float(pnl[pnl <= pct[0]].mean())
+    eg95 = float(pnl[pnl >= pct[5]].mean())   # average of the best 5%
     counts, edges = np.histogram(pnl, bins=40)
     return {
         "simulations": n, "horizon_days": horizon,
         "percentiles": {k: float(v) for k, v in zip(("p1", "p5", "p25", "p50", "p75", "p95", "p99"), pct)},
-        "expected_shortfall_95": es95, "expected_shortfall_99": es99,
+        "expected_shortfall_95": es95, "expected_shortfall_99": es99, "expected_gain_95": eg95,
         "prob_loss": {f"{int(t * 100)}": float((pnl <= -t * total).mean()) for t in (0.05, 0.10, 0.20, 0.30)},
+        "prob_gain": {f"{int(t * 100)}": float((pnl >= t * total).mean()) for t in (0.05, 0.10, 0.20, 0.30)},
         "histogram": {"edges": [float(e) for e in edges], "counts": [int(c) for c in counts]},
     }
 

@@ -23,7 +23,7 @@ LONG_START = date(2007, 12, 1)
 
 
 class StressIn(BaseModel):
-    shock_pct: float = Field(default=-15.0, ge=-90, le=50, description="Custom market move, in percent")
+    shock_pct: float = Field(default=-15.0, ge=-90, le=100, description="Custom market move in percent: negative for a fall, positive for a rally")
     horizon_days: int = Field(default=21, ge=1, le=252, description="Days over which the move happens")
     simulations: int = Field(default=10_000, ge=1_000, le=50_000)
     history: bool = Field(default=True, description="Replay past crises (downloads long history once)")
@@ -90,11 +90,12 @@ def run_stress(session: Session, body: StressIn, fetcher=None) -> dict:
                 session.rollback()
         rates = fx.Rates(session, ccys)
         full = _inr_prices(session, priced + [bench], rates)
-        for key, label, start, end in stress.CRISES:
+        events = [(k, l, a, b, "crash") for k, l, a, b in stress.CRISES] +                  [(k, l, a, b, "rally") for k, l, a, b in stress.RALLIES]
+        for key, label, start, end, kind in events:
             m0, m1 = _at(full[bench], start), _at(full[bench], end)
             if not (m0 and m1) or full[bench].dropna().index.min() > start + timedelta(days=7):
-                crises.append({"id": key, "label": label, "start": start.isoformat(), "end": end.isoformat(),
-                               "available": False})
+                crises.append({"id": key, "label": label, "kind": kind, "start": start.isoformat(),
+                               "end": end.isoformat(), "available": False})
                 continue
             move = m1 / m0 - 1
             rows, pnl = [], 0.0
@@ -106,8 +107,8 @@ def run_stress(session: Session, body: StressIn, fetcher=None) -> dict:
                     r, how = max(b[i] * move, -1.0), "beta"
                 rows.append({"symbol": s, "move": r, "pnl": values[i] * r, "method": how})
                 pnl += values[i] * r
-            crises.append({"id": key, "label": label, "start": start.isoformat(), "end": end.isoformat(),
-                           "available": True, "market_move": move, "pnl": pnl, "pnl_pct": pnl / total,
+            crises.append({"id": key, "label": label, "kind": kind, "start": start.isoformat(),
+                           "end": end.isoformat(), "available": True, "market_move": move, "pnl": pnl, "pnl_pct": pnl / total,
                            "actual_share": sum(1 for r in rows if r["method"] == "actual") / len(rows),
                            "by_holding": rows})
 

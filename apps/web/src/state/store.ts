@@ -22,6 +22,9 @@ interface State {
   setReviewOpen: (open: boolean) => void;
   loadWatchlist: () => Promise<void>;
   toggleStar: (symbol: string, name?: string) => Promise<void>;
+  toggleWatch: (symbol: string, name?: string) => Promise<void>;
+  history: WatchItem[];
+  loadHistory: () => Promise<void>;
   openSymbol: (symbol: string, name?: string, exchange?: string) => void;
   /** Exchange each symbol was picked from in the search (NASDAQ, NYSE...), for the chart. */
   exchanges: Record<string, string>;
@@ -76,17 +79,35 @@ export const useStore = create<State>((set, get) => ({
   toggleStar: async (symbol, name) => {
     const starred = get().watch.some((w) => w.symbol === symbol && w.starred);
     try {
-      const r = await api.star(symbol, !starred, name);
-      set({ watch: r.watchlist, notice: r.warning ?? (starred ? `${symbol} unstarred` : `${symbol} starred; prices cached`) });
+      const r = await api.mark(symbol, { starred: !starred }, name);
+      set({ watch: r.watchlist, notice: r.warning ?? (starred ? `${symbol} removed from the optimizer list` : `${symbol} starred for the optimizer`) });
     } catch (e) {
       set({ error: (e as Error).message });
+    }
+  },
+  toggleWatch: async (symbol, name) => {
+    const watched = get().watch.some((w) => w.symbol === symbol && w.watched);
+    try {
+      const r = await api.mark(symbol, { watched: !watched }, name);
+      set({ watch: r.watchlist, notice: r.warning ?? (watched ? `${symbol} removed from the watchlist` : `${symbol} added to the watchlist; prices cached`) });
+      get().loadHistory();
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+  history: [],
+  loadHistory: async () => {
+    try {
+      set({ history: await api.history() });
+    } catch {
+      /* history is optional */
     }
   },
   exchanges: {},
   openSymbol: (symbol, name, exchange) => {
     set((s) => ({ selected: symbol, exchanges: exchange ? { ...s.exchanges, [symbol]: exchange } : s.exchanges }));
-    // Remember it and cache its prices, so the next look is served locally.
-    api.viewed(symbol, name).then(() => get().loadWatchlist()).catch(() => {});
+    // Recorded in History only: nothing is downloaded for a stock you just look at.
+    api.viewed(symbol, name, exchange).then(() => get().loadHistory()).catch(() => {});
   },
   bondsOpen: false,
   layoutEpoch: 0,
@@ -105,6 +126,7 @@ export const useStore = create<State>((set, get) => ({
         }
         await get().reload(true);
         get().loadWatchlist();
+        get().loadHistory();
         return;
       } catch {
         await new Promise((r) => setTimeout(r, 500));

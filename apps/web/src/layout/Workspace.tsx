@@ -3,16 +3,21 @@ import { useMemo } from "react";
 import { ActionsPane } from "../panes/ActionsPane";
 import { ChartPane } from "../panes/ChartPane";
 import { CovariancePane } from "../panes/CovariancePane";
+import { HistoryPane } from "../panes/HistoryPane";
 import { HoldingsPane } from "../panes/HoldingsPane";
 import { InsightPane } from "../panes/InsightPane";
+import { NewsPane } from "../panes/NewsPane";
+import { PerformancePane } from "../panes/PerformancePane";
+import { PlanPane } from "../panes/PlanPane";
 import { OptimizerPane } from "../panes/OptimizerPane";
 import { RiskPane } from "../panes/RiskPane";
 import { StressPane } from "../panes/StressPane";
 import { TradesPane } from "../panes/TradesPane";
 import { WatchlistPane } from "../panes/WatchlistPane";
+import { WealthPane } from "../panes/WealthPane";
 import { useStore } from "../state/store";
 
-const KEY = "qt.layout.v4"; // v4 adds STRESS TEST
+const KEY = "qt.layout.v8"; // v8 adds PERFORMANCE
 
 const DEFAULT: IJsonModel = {
   global: { tabEnableClose: false, tabSetEnableMaximize: true, tabSetMinWidth: 180, tabSetMinHeight: 120 },
@@ -23,17 +28,22 @@ const DEFAULT: IJsonModel = {
         type: "tabset", weight: 28,
         children: [
           { type: "tab", name: "HOLDINGS", component: "holdings" },
+          { type: "tab", name: "WEALTH", component: "wealth" },
           { type: "tab", name: "TRADES", component: "trades" },
           { type: "tab", name: "CORP ACTIONS", component: "actions" },
           { type: "tab", name: "WATCHLIST", component: "watchlist" },
+          { type: "tab", name: "HISTORY", component: "history" },
         ],
       },
       {
         type: "tabset", weight: 48,
         children: [
+          { type: "tab", name: "PERFORMANCE", component: "performance" },
           { type: "tab", name: "CHART", component: "chart" },
+          { type: "tab", name: "NEWS", component: "news" },
           { type: "tab", name: "COVARIANCE", component: "covariance" },
           { type: "tab", name: "OPTIMIZER", component: "optimizer" },
+          { type: "tab", name: "PLAN (SIP)", component: "plan" },
         ],
       },
       {
@@ -57,6 +67,11 @@ const PANES: Record<string, () => React.JSX.Element> = {
   risk: RiskPane,
   insight: InsightPane,
   watchlist: WatchlistPane,
+  history: HistoryPane,
+  news: NewsPane,
+  wealth: WealthPane,
+  plan: PlanPane,
+  performance: PerformancePane,
   optimizer: OptimizerPane,
   stress: StressPane,
 };

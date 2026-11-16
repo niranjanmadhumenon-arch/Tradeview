@@ -74,6 +74,7 @@ export interface Portfolio {
   returns?: Returns;
   allocation?: Allocation[];
   pending_reviews?: number;
+  portfolio_cash?: number | null;
   display?: { choice: string; currency: string; inr_per_unit: number; note?: string };
 }
 
@@ -292,6 +293,8 @@ export interface ActionReview {
 export interface WatchItem {
   symbol: string;
   starred: boolean;
+  watched: boolean;
+  exchange: string;
   name: string;
   asset_class: AssetClass;
   currency: string;
@@ -320,6 +323,7 @@ export interface OptPortfolio {
 }
 
 export interface OptimizerResult {
+  scope: "portfolio" | "starred" | "both" | "custom";
   symbols: string[];
   observations: number;
   from: string;
@@ -362,18 +366,165 @@ export interface StressResult {
   portfolio_beta: number;
   shocks: ShockRow[];
   custom: ShockRow & { holdings: { symbol: string; name: string; value: number; beta: number; move: number; pnl: number }[] };
-  crises: { id: string; label: string; start: string; end: string; available: boolean; market_move?: number;
+  crises: { id: string; label: string; kind: "crash" | "rally"; start: string; end: string; available: boolean; market_move?: number;
             pnl?: number; pnl_pct?: number; actual_share?: number;
             by_holding?: { symbol: string; move: number; pnl: number; method: "actual" | "beta" }[] }[];
   monte_carlo: {
     simulations: number; horizon_days: number;
     percentiles: Record<"p1" | "p5" | "p25" | "p50" | "p75" | "p95" | "p99", number>;
-    expected_shortfall_95: number; expected_shortfall_99: number;
+    expected_shortfall_95: number; expected_shortfall_99: number; expected_gain_95: number;
     prob_loss: Record<string, number>;
+    prob_gain: Record<string, number>;
     histogram: { edges: number[]; counts: number[] };
   };
   correlation: { confidence: number; horizon_days: number; var_normal: number; var_stressed: number;
                  avg_correlation: number; avg_correlation_stressed: number };
   unpriced: string[];
   warnings: string[];
+}
+
+export interface NewsItem {
+  id: string;
+  symbols: string[];
+  title: string;
+  summary: string;
+  publisher: string;
+  url: string;
+  published_at: string;
+  source: string;
+  sources: string[];
+}
+
+export interface NewsSource {
+  id: string;
+  label: string;
+  region: string;
+  kind: "symbol" | "feed";
+  enabled: boolean;
+  shown?: boolean;
+  count?: number;
+}
+
+export interface MarketEvent {
+  date: string;
+  symbol: string;
+  kind: "earnings" | "ex_dividend" | "dividend" | "split" | "bonus" | "coupon" | "maturity" | "check" | string;
+  text: string;
+  source: string;
+}
+
+export interface NewsFeed {
+  items: NewsItem[];
+  events: MarketEvent[];
+  covered: { symbol: string; why: "held" | "watched" | "starred" | "market" | "selected"; name: string }[];
+  sources: NewsSource[];
+  updated_at: string | null;
+  downloaded_news?: number;
+  new_headlines?: number;
+  errors: string[];
+}
+
+export type WealthKind = "cash" | "fixed_deposit" | "recurring_deposit" | "ppf" | "epf" | "nps" | "pension"
+  | "life_insurance" | "term_insurance";
+
+export interface WealthInput {
+  kind: WealthKind;
+  name: string;
+  institution: string;
+  amount: number;
+  rate: number;
+  start_date: string | null;
+  maturity_date: string | null;
+  monthly_contribution: number;
+  cover: number;
+  premium: number;
+  notes: string;
+}
+
+export interface WealthItemRow extends WealthInput {
+  id: number;
+  kind_label: string;
+  group: string;
+  liquidity: "liquid" | "deposit" | "locked" | "protection";
+  effective_rate: number;
+  value: number;
+  matures_in_days: number | null;
+}
+
+export interface WealthOverview {
+  net_worth: number;
+  market_value: number;
+  portfolio_cash: number;
+  other_assets: number;
+  groups: { group: string; value: number; weight: number | null }[];
+  liquidity: { cash: number; market: number; deposits: number; locked: number };
+  protection: { life_cover: number; annual_premium: number; policies: number };
+  monthly_contributions: number;
+  maturing_within_90_days: WealthItemRow[];
+  items: WealthItemRow[];
+  kinds: { kind: WealthKind; label: string; group: string; liquidity: string; rate: number }[];
+}
+
+export interface ProjectionPoint {
+  month: number; date: string; invested: number; expected: number;
+  p10: number; p50: number; p90: number; other: number; other_invested: number;
+  total_p10: number; total_p50: number; total_p90: number;
+  cost: number; p10_after_tax: number; p50_after_tax: number; p90_after_tax: number; total_p50_after_tax: number;
+}
+
+export interface ProjectionResult {
+  assumptions: {
+    source: "past" | "cautious" | "neutral" | "optimistic"; expected_return: number; volatility: number;
+    volatility_source?: string; weights: Record<string, number>;
+    per_class: Record<string, { expected_return: number; volatility: number }> | null;
+    monthly_sip: number; step_up_pct: number; years: number; interval: string; start_value: number; simulations: number;
+    start_cost: number; tax_gains_pct: number; gains_exemption: number; tax_interest_pct: number; renew_deposits: boolean;
+  };
+  points: ProjectionPoint[];
+  summary: {
+    invested_total: number; added_by_sip: number; median: number; bad_case: number; good_case: number; expected: number;
+    median_annual_return: number | null; chance_below_invested: number; other_assets: number; total_median: number;
+    median_after_tax: number; bad_case_after_tax: number; good_case_after_tax: number; tax_on_median: number;
+    median_annual_return_after_tax: number | null; total_median_after_tax: number;
+  };
+  warnings: string[];
+}
+
+export interface Timeline {
+  dates: string[];
+  series: {
+    market: (number | null)[]; invested: (number | null)[]; cash: (number | null)[];
+    gain: (number | null)[]; other_wealth: (number | null)[]; net_worth: (number | null)[];
+    benchmark: (number | null)[] | null;
+  };
+  by_class: Record<string, (number | null)[]>;
+  wealth_groups: Record<string, (number | null)[]>;
+  benchmark: string;
+  benchmark_name: string;
+  warnings: string[];
+}
+
+export interface CashMovement {
+  date: string;
+  kind: "dividend" | "sale" | "purchase" | "withdrawal";
+  symbol: string;
+  amount: number;
+  from_cash: number;
+  new_money: number;
+  cash: number;
+  money_in: number;
+  note?: string;
+  id?: number;
+}
+
+export interface PortfolioCash {
+  balance: number;
+  dividends: number;
+  sale_proceeds: number;
+  spent_from_cash: number;
+  new_money: number;
+  withdrawn: number;
+  money_in: number;
+  movements: CashMovement[];
+  withdrawals: { id: number; date: string; amount: number; note: string }[];
 }

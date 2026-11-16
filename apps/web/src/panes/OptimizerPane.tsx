@@ -14,12 +14,19 @@ const COLS: { key: keyof OptimizerResult["portfolios"]; label: string; title: st
   { key: "current", label: "YOURS", title: "Your current mix of these stocks" },
 ];
 
-/** Mean-variance (Markowitz) optimisation of the starred (*) stocks. */
+const SCOPES = [{ value: "portfolio", label: "PORTFOLIO" }, { value: "starred", label: "★ STARRED" },
+                { value: "both", label: "BOTH" }] as const;
+type Scope = (typeof SCOPES)[number]["value"];
+
+/** Mean-variance (Markowitz) optimisation of the whole portfolio by default,
+ *  or of the starred (★) stocks, or both. */
 export function OptimizerPane() {
   const starred = useStore((s) => s.watch.filter((w) => w.starred).length);
   const [lookback, setLookback] = useState(504);
   const [cap, setCap] = useState(0.35);
-  const [holdings, setHoldings] = useState(false);
+  const [scope, setScope] = useState<Scope>("portfolio");
+  const held = useStore((s) => (s.portfolio?.holdings ?? []).filter((h) => !h.symbol.startsWith("BOND:")).length);
+  const count = scope === "portfolio" ? held : scope === "starred" ? starred : held + starred;
   const [result, setResult] = useState<OptimizerResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +35,7 @@ export function OptimizerPane() {
     setBusy(true);
     setError(null);
     try {
-      setResult(await api.optimize({ lookback_days: lookback, max_weight: cap, include_holdings: holdings }));
+      setResult(await api.optimize({ scope, lookback_days: lookback, max_weight: cap }));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -43,21 +50,19 @@ export function OptimizerPane() {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-3 py-2">
         <Seg<number> label="HISTORY" value={lookback} options={LOOKBACKS} onChange={setLookback} />
         <Seg<number> label="MAX PER STOCK" value={cap} options={CAPS} onChange={setCap} />
-        <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-dim">
-          <input type="checkbox" checked={holdings} onChange={(e) => setHoldings(e.target.checked)} className="accent-amber" />
-          ADD HOLDINGS
-        </label>
-        <button onClick={run} disabled={busy || (starred < 2 && !holdings)}
+        <Seg<Scope> label="OPTIMISE" value={scope} options={[...SCOPES]} onChange={(v) => { setScope(v); setResult(null); }} />
+        <button onClick={run} disabled={busy || count < 2}
                 className="ml-auto border border-amber px-3 py-1 text-amber hover:bg-amber hover:text-black disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-amber">
-          {busy ? "OPTIMISING…" : `OPTIMISE ${starred ? `${starred} ★` : ""}`}
+          {busy ? "OPTIMISING…" : `RUN · ${count} ${count === 1 ? "STOCK" : "STOCKS"}`}
         </button>
       </div>
 
       {error && <div role="alert" className="px-3 py-2 text-down">{error}</div>}
 
       {!result ? (
-        <Empty title={starred >= 2 || holdings ? "Ready to optimise" : "Star at least two stocks"}
-               hint="Uses the starred (★) stocks' cached daily prices, in rupees, to find the mix with the best return for its risk (max Sharpe) and the lowest-risk mix." />
+        <Empty title={count >= 2 ? (scope === "portfolio" ? "Optimise your whole portfolio" : "Ready to optimise")
+                       : scope === "starred" ? "Star at least two stocks" : "Hold at least two stocks"}
+               hint="By default the whole portfolio is optimised. Switch to ★ STARRED for stocks you are considering, or BOTH. Uses cached daily prices in rupees to find the best return for its risk (max Sharpe) and the lowest-risk mix, compared with your current weights." />
       ) : (
         <>
           <Frontier r={result} />

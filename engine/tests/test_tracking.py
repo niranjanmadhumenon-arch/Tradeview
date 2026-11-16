@@ -187,6 +187,7 @@ def test_live_snapshot_converts_foreign_quotes(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- local price cache
 
 def test_prices_are_served_from_the_cache_and_updated_incrementally(client):
+    client.put("/api/watchlist/INFY.NS", json={"watched": True})      # watched: prices are kept
     r = client.get("/api/prices/INFY.NS", params={"days": 365}).json()
     assert r["bars"] and r["currency"] == "INR"
     first = [c for c in CALLS if c[0] == "INFY.NS"]
@@ -201,12 +202,12 @@ def test_prices_are_served_from_the_cache_and_updated_incrementally(client):
     assert last_call[1] == DAYS[-1] - timedelta(days=7)               # only the last week
     stats = client.get("/api/cache").json()
     assert stats["served_from_cache"] >= 1 and stats["incremental_updates"] == 1
-    assert stats["full_downloads"] == 1
+    assert stats["full_downloads"] == 1          # the watch itself; every later read is local
     assert client.get("/api/prices/INFY.NS/csv").text.startswith("date,close,adj_close\n")
 
 
 def test_a_new_dividend_forces_a_full_download(client, monkeypatch):
-    client.get("/api/prices/ITC.NS", params={"days": 365})
+    client.put("/api/watchlist/ITC.NS", json={"watched": True})
     with session_of(client) as s:
         mark = s.get(Setting, "refreshed:ITC.NS")
         mark.value = "2000-01-01|" + mark.value.partition("|")[2]
@@ -224,23 +225,83 @@ def test_a_new_dividend_forces_a_full_download(client, monkeypatch):
 
 # ---------------------------------------------------------------- watchlist and optimiser
 
-def test_starring_caches_prices_and_lists_them(client):
-    r = client.put("/api/watchlist/HDFCBANK.NS", json={"starred": True, "name": "HDFC Bank"}).json()
+def test_watch_star_and_history_are_separate(client):
+    # Watching (eye) and starring both cache prices and list the stock.
+    r = client.put("/api/watchlist/HDFCBANK.NS", json={"watched": True, "name": "HDFC Bank"}).json()
     row = r["watchlist"][0]
-    assert row["starred"] and row["cached_bars"] > 200 and row["last"] is not None
-    client.post("/api/watchlist/MSFT/view", json={"name": "Microsoft"})
-    rows = client.get("/api/watchlist").json()
-    assert [x["symbol"] for x in rows] == ["HDFCBANK.NS", "MSFT"] and rows[1]["currency"] == "USD"
+    assert row["watched"] and not row["starred"] and row["cached_bars"] > 200 and row["last"] is not None
+    client.put("/api/watchlist/TCS.NS", json={"starred": True})
+    assert {x["symbol"] for x in client.get("/api/watchlist").json()} == {"HDFCBANK.NS", "TCS.NS"}
+
+    # Opening a stock from the search only records the visit: no download, not on the watchlist.
+    before = len(CALLS)
+    seen = client.post("/api/watchlist/MSFT/view", json={"name": "Microsoft", "exchange": "NASDAQ"}).json()
+    assert seen == {"symbol": "MSFT", "tracked": False} and len(CALLS) == before
+    assert "MSFT" not in {x["symbol"] for x in client.get("/api/watchlist").json()}
+    hist = client.get("/api/history").json()
+    assert hist[0]["symbol"] == "MSFT" and hist[0]["cached_bars"] == 0 and hist[0]["exchange"] == "NASDAQ"
+
+    # Its chart: nothing cached, so nothing unless asked; then downloaded once and not saved.
+    assert client.get("/api/prices/MSFT").json()["bars"] == []
+    once = client.get("/api/prices/MSFT", params={"fetch": "true"}).json()
+    assert once["bars"] and once["saved"] is False and once["currency"] == "USD"
+    assert client.get("/api/prices/MSFT").json()["bars"] == []          # still nothing stored
+    assert "MSFT" not in {x["symbol"] for x in client.get("/api/cache").json()["symbols"]}
+
+    # Watching it later starts caching; clearing history keeps watched stocks listed.
+    client.put("/api/watchlist/MSFT", json={"watched": True})
+    assert client.get("/api/prices/MSFT").json()["saved"] is True
+    assert client.delete("/api/history").json() == []
+    assert "MSFT" in {x["symbol"] for x in client.get("/api/watchlist").json()}
     assert client.put("/api/watchlist/not a symbol!", json={"starred": True}).status_code == 400
-    assert [x["symbol"] for x in client.delete("/api/watchlist/MSFT").json()] == ["HDFCBANK.NS"]
+    assert "MSFT" not in {x["symbol"] for x in client.delete("/api/watchlist/MSFT").json()}
+
+
+def test_starred_rows_stay_watched_after_upgrade(tmp_path):
+    from sqlalchemy import create_engine, text
+
+    from app.db.models import make_sessionmaker
+
+    url = f"sqlite:///{(tmp_path / 'old.sqlite3').as_posix()}"
+    with create_engine(url).begin() as conn:
+        conn.execute(text("CREATE TABLE watchlist (symbol VARCHAR PRIMARY KEY, starred BOOLEAN NOT NULL, "
+                          "added_at DATETIME NOT NULL, viewed_at DATETIME)"))
+        conn.execute(text("INSERT INTO watchlist VALUES ('INFY.NS', 1, '2026-01-01', NULL), "
+                          "('MSFT', 0, '2026-01-01', '2026-01-02')"))
+    make_sessionmaker(url)
+    with create_engine(url).connect() as conn:
+        rows = dict(conn.execute(text("SELECT symbol, watched FROM watchlist")).all())
+    assert rows == {"INFY.NS": 1, "MSFT": 0}
+
+
+def test_optimiser_scopes(client):
+    # Default scope is the whole portfolio.
+    no_holdings = client.post("/api/optimizer", json={})
+    assert no_holdings.status_code == 400 and "Hold at least two" in no_holdings.json()["detail"]
+    trade(client, "INFY.NS", 10, 1000.0, DAYS[-300].isoformat())
+    trade(client, "TCS.NS", 3, 3000.0, DAYS[-300].isoformat())
+    trade(client, "AAPL", 5, 150.0, DAYS[-300].isoformat(), market="INTL")
+    r = client.post("/api/optimizer", json={"lookback_days": 252}).json()
+    assert r["scope"] == "portfolio" and set(r["symbols"]) == {"INFY.NS", "TCS.NS", "AAPL"}
+    assert set(r["portfolios"]["current"]["weights"]) == {"INFY.NS", "TCS.NS", "AAPL"}
+    assert sum(r["portfolios"]["current"]["weights"].values()) == pytest.approx(1.0)
+
+    for s in ("HDFCBANK.NS", "ITC.NS"):
+        client.put(f"/api/watchlist/{s}", json={"starred": True})
+    starred = client.post("/api/optimizer", json={"scope": "starred", "lookback_days": 252}).json()
+    assert set(starred["symbols"]) == {"HDFCBANK.NS", "ITC.NS"} and "current" not in starred["portfolios"]
+    both = client.post("/api/optimizer", json={"scope": "both", "lookback_days": 252}).json()
+    assert set(both["symbols"]) == {"INFY.NS", "TCS.NS", "AAPL", "HDFCBANK.NS", "ITC.NS"}
+    custom = client.post("/api/optimizer", json={"symbols": ["INFY.NS", "ITC.NS"], "lookback_days": 252}).json()
+    assert custom["scope"] == "custom" and set(custom["symbols"]) == {"INFY.NS", "ITC.NS"}
 
 
 def test_optimiser_on_starred_stocks(client):
-    assert client.post("/api/optimizer", json={}).status_code == 400   # nothing starred yet
+    assert client.post("/api/optimizer", json={"scope": "starred"}).status_code == 400   # nothing starred yet
     for s in ("HDFCBANK.NS", "INFY.NS", "ITC.NS", "AAPL"):
         client.put(f"/api/watchlist/{s}", json={"starred": True})
     trade(client, "INFY.NS", 10, 1000.0, DAYS[-300].isoformat())
-    r = client.post("/api/optimizer", json={"max_weight": 0.4, "lookback_days": 252}).json()
+    r = client.post("/api/optimizer", json={"scope": "starred", "max_weight": 0.4, "lookback_days": 252}).json()
     assert set(r["symbols"]) == {"HDFCBANK.NS", "INFY.NS", "ITC.NS", "AAPL"}
     best, low = r["portfolios"]["max_sharpe"], r["portfolios"]["min_variance"]
     for p in (best, low):

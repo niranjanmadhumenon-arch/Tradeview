@@ -1,4 +1,4 @@
-import type { ImportFormats, ImportPreview, StressResult, ActionReview, CacheStatus, OptimizerResult, WatchItem, AssetClass, BenchmarkOption, Bond, BondInput, BseSyncResult, ConnectionsState, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, PriceSource, SearchResponse, Settings, SourceId, SyncResult, Trade } from "./types";
+import type { PortfolioCash, Timeline, NewsSource, ProjectionResult, WealthInput, WealthItemRow, WealthOverview, NewsFeed, ImportFormats, ImportPreview, StressResult, ActionReview, CacheStatus, OptimizerResult, WatchItem, AssetClass, BenchmarkOption, Bond, BondInput, BseSyncResult, ConnectionsState, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, PriceSource, SearchResponse, Settings, SourceId, SyncResult, Trade } from "./types";
 
 declare global {
   interface Window {
@@ -92,16 +92,19 @@ export const api = {
     call<{ decided: { id: number; decision: string }[]; remaining: number }>(
       "/api/corporate-actions/review/accept-suggestions", { method: "POST" }),
   watchlist: () => call<WatchItem[]>("/api/watchlist"),
-  star: (symbol: string, starred: boolean, name?: string) =>
-    json<{ watchlist: WatchItem[]; warning: string | null }>("PUT", `/api/watchlist/${encodeURIComponent(symbol)}`, { starred, name }),
+  mark: (symbol: string, marks: { starred?: boolean; watched?: boolean }, name?: string) =>
+    json<{ watchlist: WatchItem[]; warning: string | null }>("PUT", `/api/watchlist/${encodeURIComponent(symbol)}`, { ...marks, name }),
+  history: () => call<WatchItem[]>("/api/history"),
+  clearHistory: () => call<WatchItem[]>("/api/history", { method: "DELETE" }),
+  forgetVisit: (symbol: string) => call<WatchItem[]>(`/api/history/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
   unwatch: (symbol: string) => call<WatchItem[]>(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
-  viewed: (symbol: string, name?: string) =>
-    json<{ symbol: string; warning: string | null }>("POST", `/api/watchlist/${encodeURIComponent(symbol)}/view`, { name }),
+  viewed: (symbol: string, name?: string, exchange?: string) =>
+    json<{ symbol: string; tracked: boolean }>("POST", `/api/watchlist/${encodeURIComponent(symbol)}/view`, { name, exchange }),
   cache: () => call<CacheStatus>("/api/cache"),
-  prices: (symbol: string, days = 730) =>
-    call<{ symbol: string; currency: string; warning: string | null;
+  prices: (symbol: string, days = 730, fetch = false) =>
+    call<{ symbol: string; currency: string; warning: string | null; tracked: boolean; saved: boolean;
            bars: { date: string; close: number; adj_close: number }[] }>(
-      `/api/prices/${encodeURIComponent(symbol)}?days=${days}`),
+      `/api/prices/${encodeURIComponent(symbol)}?days=${days}&fetch=${fetch}`),
   pricesCsv: async (symbol: string) => {
     const headers = new Headers();
     if (TOKEN) headers.set("X-QT-Token", TOKEN);
@@ -109,7 +112,7 @@ export const api = {
     if (!res.ok) throw new Error("Nothing cached for this symbol yet");
     return res.blob();
   },
-  optimize: (body: { symbols?: string[]; include_holdings?: boolean; lookback_days?: number; max_weight?: number }) =>
+  optimize: (body: { scope?: "portfolio" | "starred" | "both"; symbols?: string[]; lookback_days?: number; max_weight?: number }) =>
     json<OptimizerResult>("POST", "/api/optimizer", body),
   insight: () => call<InsightState>("/api/insight"),
   saveInsightKey: (key: string) =>
@@ -141,6 +144,28 @@ export const api = {
     const res = await fetch(`${BASE}/api/ledger/import/template`, { headers });
     return res.blob();
   },
+  news: (opts: { scope?: "all" | "portfolio" | "watchlist"; symbol?: string; force?: boolean } = {}) => {
+    const q = new URLSearchParams({ scope: opts.scope ?? "all" });
+    if (opts.symbol) q.set("symbol", opts.symbol);
+    if (opts.force) q.set("force", "true");
+    return call<NewsFeed>(`/api/news?${q}`);
+  },
+  newsSources: () => call<NewsSource[]>("/api/news/sources"),
+  setNewsSources: (enabled: string[]) => json<NewsSource[]>("PUT", "/api/news/sources", { enabled }),
+  wealth: () => call<WealthOverview>("/api/wealth"),
+  timeline: () => call<Timeline>("/api/timeline"),
+  portfolioCash: () => call<PortfolioCash>("/api/portfolio-cash"),
+  withdraw: (date: string, amount: number, note: string) =>
+    json<PortfolioCash>("POST", "/api/portfolio-cash/withdrawals", { date, amount, note }),
+  deleteWithdrawal: (id: number) => call<PortfolioCash>(`/api/portfolio-cash/withdrawals/${id}`, { method: "DELETE" }),
+  addWealth: (item: WealthInput) => json<WealthItemRow>("POST", "/api/wealth", item),
+  editWealth: (id: number, item: WealthInput) => json<WealthItemRow>("PUT", `/api/wealth/${id}`, item),
+  deleteWealth: (id: number) => call<{ deleted: number }>(`/api/wealth/${id}`, { method: "DELETE" }),
+  projection: (body: { mode: "continue" | "fresh"; monthly_sip: number; step_up_pct: number; years: number;
+                       interval: "monthly" | "quarterly" | "yearly"; outlook: "past" | "cautious" | "neutral" | "optimistic";
+                       include_wealth: boolean; tax_gains_pct: number; gains_exemption: number;
+                       tax_interest_pct: number; renew_deposits: boolean }) =>
+    json<ProjectionResult>("POST", "/api/projection", body),
   stress: (body: { shock_pct?: number; horizon_days?: number; simulations?: number; history?: boolean }) =>
     json<StressResult>("POST", "/api/stress", body),
 };

@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { SearchResult } from "../api/types";
 import { ticker } from "../format";
 import { useStore } from "../state/store";
+import { EyeIcon } from "../ui";
 
 const MARKETS = ["ALL", "INDIA", "US", "UK", "EUROPE", "ASIA", "FUNDS"] as const;
 type Market = (typeof MARKETS)[number];
@@ -35,6 +36,8 @@ export function SearchBox() {
   const toggleStar = useStore((s) => s.toggleStar);
   const watch = useStore((s) => s.watch);
   const starredSet = new Set(watch.filter((w) => w.starred).map((w) => w.symbol));
+  const watchedSet = new Set(watch.filter((w) => w.watched).map((w) => w.symbol));
+  const toggleWatch = useStore((s) => s.toggleWatch);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState<Market>(savedMarket);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -221,6 +224,13 @@ export function SearchBox() {
                         {r.exchange === "CMDTY" ? "CMD" : r.exchange}{r.currency ? ` · ${r.currency}` : ""}
                       </span>
                       <button type="button"
+                              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleWatch(r.symbol, r.name); }}
+                              aria-label={watchedSet.has(r.symbol) ? `Stop watching ${r.symbol}` : `Watch ${r.symbol}`}
+                              title={watchedSet.has(r.symbol) ? "On your watchlist" : "Add to watchlist"}
+                              className={`shrink-0 ${watchedSet.has(r.symbol) ? (on ? "text-black" : "text-cyan") : (on ? "text-black/60" : "text-dim hover:text-cyan")}`}>
+                        <EyeIcon on={watchedSet.has(r.symbol)} />
+                      </button>
+                      <button type="button" title={starredSet.has(r.symbol) ? "Starred for the optimizer" : "Star for the optimizer"}
                               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleStar(r.symbol, r.name); }}
                               aria-label={starredSet.has(r.symbol) ? `Unstar ${r.symbol}` : `Star ${r.symbol}`}
                               className={`shrink-0 ${starredSet.has(r.symbol) ? (on ? "text-black" : "text-amber") : (on ? "text-black/60" : "text-dim hover:text-amber")}`}>

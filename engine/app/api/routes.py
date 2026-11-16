@@ -21,12 +21,13 @@ from sqlalchemy.orm import Session
 from app import config
 from app.ai import memo as memo_ai
 from app.ai.gemini import InsightError
-from app.db.models import Bond, CorporateAction, Instrument, Memo, Trade
+from app.db.models import Bond, CorporateAction, Instrument, Memo, Trade, WealthItem
 from app.ledger import detect, ingest, mapping, table, upstox
 from app.market import commodities, symbols
 from app.market import search as market_search
 from app.market.live import LiveHub
 from app.quant import service
+from app.quant import wealth as wealth_math
 
 
 def get_session(request: Request):
@@ -485,13 +486,24 @@ def remove_insight_key(request: Request):
     return _insight_state(request)
 
 
+def _wealth_for_ai(session: Session, data: dict) -> dict:
+    by_class: dict[str, float] = {}
+    for h in data["holdings"]:
+        if h.get("value"):
+            by_class[h.get("asset_class") or "equity"] = by_class.get(h.get("asset_class") or "equity", 0.0) + h["value"]
+    from app.quant import cashflow
+
+    return wealth_math.summary(session.scalars(select(WealthItem)).all(), data["portfolio_value"] or 0.0, by_class,
+                               cashflow.balance(session)["balance"])
+
+
 @router.get("/insight/preview")
 def insight_preview(session: Session = Depends(get_session)):
     """Exactly what would be sent to the model, so the user can inspect it first."""
     data = service.compute(session, refresh=False)
     if not data["metrics"]:
         raise HTTPException(status_code=409, detail="No risk metrics yet. Import trades and refresh prices first.")
-    return memo_ai.build_payload(data)
+    return memo_ai.build_payload(data, _wealth_for_ai(session, data))
 
 
 @router.post("/insight/memo")
@@ -508,7 +520,7 @@ def create_memo(request: Request, session: Session = Depends(get_session)):
     data = service.compute(session, refresh=False)
     if not data["metrics"]:
         raise HTTPException(status_code=409, detail="No risk metrics yet. Import trades and refresh prices first.")
-    payload = memo_ai.build_payload(data)
+    payload = memo_ai.build_payload(data, _wealth_for_ai(session, data))
     model = config.gemini_model()
     try:
         text = request.app.state.memo_generator(api_key, model, memo_ai.SYSTEM_INSTRUCTION, payload)

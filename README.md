@@ -272,6 +272,33 @@ Buy/Sell, Txn Date...). If a column still isn't recognised, the import page
 lets you point each field at the right column before importing. DOWNLOAD
 TEMPLATE gives a ready-to-fill file.
 
+## News
+
+The NEWS tab covers the stocks you hold, watch (eye) or star, plus market news
+for the benchmark. Stocks that are only in History get no news downloads.
+Headlines come from free public feeds that need no keys. Each feed is
+downloaded at most every 30 minutes and kept in the local database.
+
+| Source | How it is used |
+| --- | --- |
+| Yahoo Finance | Headlines per stock, plus the results and dividend calendar |
+| Google News | A search per stock by company name (last 7 days), from Google's many outlets |
+| Economic Times, Livemint, Business Standard, BusinessLine, CNBC-TV18 | Indian market wires, one download each |
+| MarketWatch, CNBC | US market wires, one download each |
+
+Wire stories are matched to your stocks by company name or ticker. Stories
+that mention none of your stocks appear as market news (the newest 10 per
+wire), and only from wires in the same region as your benchmark. The same
+story from several sources is shown once, with every source listed.
+
+- **SOURCES** turns a feed off. A feed that is off is not downloaded.
+- The **SHOW** chips hide a source's stories without changing what is downloaded.
+
+The idea of aggregating many outlets and mapping stories to tickers comes from
+[realtime-newsapi](https://github.com/janlukasschroeder/realtime-newsapi).
+Its free newsfilter.io endpoint now refuses requests (HTTP 403), so it is not
+used. Moneycontrol's public RSS stopped updating, so it is not used either.
+
 ## AI insight
 
 The **AI INSIGHT** tab (right-hand panel, next to RISK and STRESS TEST) writes a

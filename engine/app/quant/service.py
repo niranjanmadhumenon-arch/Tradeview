@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from app.config import BENCHMARK_NAMES, DEFAULT_SETTINGS, DISPLAY_CURRENCIES, INSIGHT_WINDOWS
 from types import SimpleNamespace
 
-from app.db.models import Bond, BrokerHolding, CorporateAction, Instrument, Setting, Trade, Watch
+from app.db.models import (Bond, BrokerHolding, CorporateAction, Instrument, Setting, Trade,
+                           Watch)
 from app.ledger import review
 from app.ledger.positions import EPS, Position, build_positions
 from app.market import fx, history, symbols
@@ -209,6 +210,13 @@ def display_currency(session: Session, choice: str, value: dict[str, float],
     return {"choice": choice, "currency": code, "inr_per_unit": rate}
 
 
+def _portfolio_cash(session: Session) -> float:
+    """Cash held in the portfolio today (see app.quant.cashflow)."""
+    from app.quant import cashflow   # imported here: cashflow builds on this module
+
+    return cashflow.balance(session)["balance"]
+
+
 def history_start(session: Session, lookback_days: int = 252) -> date:
     """Earliest date to keep prices for: the first trade, or far enough back to
     fill the lookback window (trading days, with room for holidays), whichever is earlier."""
@@ -225,7 +233,7 @@ def refresh_market(session: Session, benchmark: str, fetcher=None, force: bool =
     warnings: list[str] = []
     start = history_start(session, lookback_days)
     traded = list(session.scalars(select(Trade.symbol).distinct()))
-    tracked = list(session.scalars(select(Watch.symbol).where(Watch.starred)))
+    tracked = list(session.scalars(select(Watch.symbol).where(Watch.starred | Watch.watched)))
     # FX first, so international prices and costs convert with fresh rates.
     ccys = fx.currencies(session, traded + tracked)
     shown = get_settings(session)["display_currency"]
@@ -301,6 +309,8 @@ def compute(session: Session, overrides: dict | None = None, *, refresh: bool = 
         "observations": 0,
         "warnings": warnings,
         "pending_reviews": pending,
+        # Dividends, coupons and sale proceeds stay as cash until spent on a purchase or withdrawn.
+        "portfolio_cash": _f(_portfolio_cash(session)),
     }
     holdings = {
         s: {
@@ -388,6 +398,8 @@ def compute(session: Session, overrides: dict | None = None, *, refresh: bool = 
         "sortino": _f(qm.sortino_ratio(rp, rf)),
         "max_drawdown": _f(qm.max_drawdown(rp)),
         "volatility_annualized": _f(qm.annualized_volatility(rp)),
+        # Compound annual return of today's mix over the lookback (used for projections).
+        "return_annualized": _f(float(np.prod(1 + rp)) ** (qm.TRADING_DAYS / len(rp)) - 1),
         "var": _f(var["var"]),
         "var_pct": _f(var["var"] / total),
         "var_z": _f(var["z"]),

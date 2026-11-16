@@ -63,10 +63,10 @@ export function InsightPane() {
   if (state && !state.configured) {
     return (
       <div className="space-y-3 p-3">
-        <div className="text-[10px] tracking-widest text-dim">AI INSIGHT · GOOGLE GEMINI</div>
+        <div className="text-[10px] tracking-widest text-dim">AI PORTFOLIO & WEALTH ANALYSIS · GOOGLE GEMINI</div>
         <p className="text-[11px] leading-relaxed text-dim">
-          Generates a short hedging memo from the risk figures this terminal has already computed. Gemini
-          receives only those summary figures (weights, beta, VaR, ratios), never your trades, quantities or
+          Writes a short review of your portfolio risk and, when you have added cash, deposits, pension or insurance under WEALTH, your whole wealth: mix, liquidity and protection. Gemini
+          receives only summary figures (weights, beta, VaR, ratios, shares of net worth), never your trades, quantities or
           costs, and it does no calculations.
         </p>
         <ol className="list-decimal space-y-0.5 pl-4 text-[11px] text-dim">
