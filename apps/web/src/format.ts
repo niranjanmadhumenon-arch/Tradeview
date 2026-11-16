@@ -28,10 +28,6 @@ export function ticker(symbol: string): string {
   return symbol.replace(/\.(NS|BO)$/, "");
 }
 
-export function benchmarkName(b: string): string {
-  return b === "^BSESN" ? "SENSEX" : "NIFTY 50";
-}
-
 export function signedPct(v: number, digits = 2): string {
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${num(Math.abs(v) * 100, digits)}%`;
 }

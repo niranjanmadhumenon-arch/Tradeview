@@ -3,13 +3,17 @@ are to the local ledger database (imports, manual corporate actions, settings)."
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import json
+import re
+import uuid
 from datetime import datetime
 
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +50,8 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
 
 class SettingsIn(BaseModel):
     benchmark: str | None = None
+    benchmark_name: str | None = None
+    cov_horizon_days: int | None = None
     confidence: float | None = None
     horizon_days: int | None = None
     lookback_days: int | None = None
@@ -57,6 +63,51 @@ class ActionIn(BaseModel):
     ex_date: date
     kind: Literal["split", "bonus", "dividend"]
     value: float = Field(gt=0, description="Share multiplier for split/bonus; cash per share for dividend")
+
+
+class TradeIn(BaseModel):
+    """A trade the user made elsewhere and is recording here. Bookkeeping only:
+    nothing in this engine can send it, or anything else, to a broker."""
+    symbol: str = Field(min_length=1, max_length=40)
+    side: Literal["BUY", "SELL"]
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0)
+    traded_at: datetime
+    name: str | None = Field(default=None, max_length=120)
+
+
+_LEDGER_SYMBOL = re.compile(r"^[A-Z0-9&_-]{1,30}\.(NS|BO)$")
+
+
+def _ledger_symbol(raw: str) -> str:
+    symbol = raw.strip().upper()
+    if "." not in symbol:
+        symbol += ".NS"
+    if not _LEDGER_SYMBOL.match(symbol):
+        raise HTTPException(status_code=400,
+                            detail="Symbol must be an NSE or BSE ticker, e.g. RELIANCE or RELIANCE.BO")
+    return symbol
+
+
+def _trade_json(t: Trade, names: dict[str, str]) -> dict:
+    return {"id": t.id, "symbol": t.symbol, "name": names.get(t.symbol, ""), "side": t.side,
+            "quantity": t.quantity, "price": t.price, "traded_at": t.traded_at.isoformat(),
+            "broker": t.broker}
+
+
+def _names(session: Session) -> dict[str, str]:
+    return {i.symbol: i.name or "" for i in session.scalars(select(Instrument))}
+
+
+def _remember_instrument(session: Session, symbol: str, name: str | None) -> None:
+    known = session.get(Instrument, symbol)
+    if known is None:
+        scrip, _, suffix = symbol.rpartition(".")
+        session.add(Instrument(symbol=symbol, name=(name or "").strip(),
+                               exchange="BSE" if suffix == "BO" else "NSE", scrip_code=scrip))
+        session.flush()
+    elif name and not known.name:
+        known.name = name.strip()
 
 
 class UpstoxTokenIn(BaseModel):
@@ -114,33 +165,99 @@ async def import_ledger(request: Request, file: UploadFile = File(...),
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    existing = set(session.scalars(select(Trade.trade_id).where(Trade.broker == upstox.BROKER)))
-    imported = duplicates = 0
+    existing = {t.trade_id: t for t in session.scalars(select(Trade))}
+    imported = duplicates = updated = 0
     for t in parsed.trades:
-        if t.trade_id in existing:
-            duplicates += 1
+        known = existing.get(t.trade_id)
+        if known is not None:
+            # Rows from this app's own export carry their ledger id: apply edits made in the file.
+            new = (t.symbol, t.side, t.quantity, t.price, t.traded_at)
+            old = (known.symbol, known.side, known.quantity, known.price, known.traded_at)
+            if t.from_export and new != old:
+                known.symbol, known.side, known.quantity, known.price, known.traded_at = new
+                _remember_instrument(session, t.symbol, t.name)
+                updated += 1
+            else:
+                duplicates += 1
             continue
-        existing.add(t.trade_id)
-        session.add(Trade(broker=upstox.BROKER, trade_id=t.trade_id, symbol=t.symbol, side=t.side,
-                          quantity=t.quantity, price=t.price, traded_at=t.traded_at))
-        if session.get(Instrument, t.symbol) is None:
-            session.add(Instrument(symbol=t.symbol, name=t.name, exchange=t.exchange,
-                                   scrip_code=t.scrip_code))
-            session.flush()
+        row = Trade(broker="manual" if t.trade_id.startswith("m:") else upstox.BROKER,
+                    trade_id=t.trade_id, symbol=t.symbol, side=t.side,
+                    quantity=t.quantity, price=t.price, traded_at=t.traded_at)
+        session.add(row)
+        existing[t.trade_id] = row
+        _remember_instrument(session, t.symbol, t.name)
         imported += 1
     session.commit()
     _poke(request)
-    return {"imported": imported, "duplicates": duplicates, "skipped": parsed.skipped}
+    return {"imported": imported, "duplicates": duplicates, "updated": updated,
+            "skipped": parsed.skipped}
 
 
 @router.get("/ledger/trades")
 def list_trades(session: Session = Depends(get_session)):
-    rows = session.scalars(select(Trade).order_by(Trade.traded_at.desc())).all()
-    return [
-        {"id": t.id, "symbol": t.symbol, "side": t.side, "quantity": t.quantity,
-         "price": t.price, "traded_at": t.traded_at.isoformat(), "broker": t.broker}
-        for t in rows
-    ]
+    names = _names(session)
+    rows = session.scalars(select(Trade).order_by(Trade.traded_at.desc(), Trade.id.desc())).all()
+    return [_trade_json(t, names) for t in rows]
+
+
+@router.post("/ledger/trades", status_code=201)
+def record_trade(body: TradeIn, request: Request, session: Session = Depends(get_session)):
+    """Records a trade that already happened at a broker. Local bookkeeping only."""
+    symbol = _ledger_symbol(body.symbol)
+    trade = Trade(broker="manual", trade_id=f"m:{uuid.uuid4().hex}", symbol=symbol, side=body.side,
+                  quantity=body.quantity, price=body.price,
+                  traded_at=body.traded_at.replace(tzinfo=None))
+    session.add(trade)
+    _remember_instrument(session, symbol, body.name)
+    session.commit()
+    _poke(request)
+    return _trade_json(trade, _names(session))
+
+
+@router.put("/ledger/trades/{trade_id}")
+def amend_trade(trade_id: int, body: TradeIn, request: Request,
+                session: Session = Depends(get_session)):
+    """Corrects a ledger entry. The row keeps its identity, so a later import does not duplicate it."""
+    trade = session.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="No such trade in the ledger")
+    trade.symbol = _ledger_symbol(body.symbol)
+    trade.side, trade.quantity, trade.price = body.side, body.quantity, body.price
+    trade.traded_at = body.traded_at.replace(tzinfo=None)
+    _remember_instrument(session, trade.symbol, body.name)
+    session.commit()
+    _poke(request)
+    return _trade_json(trade, _names(session))
+
+
+@router.delete("/ledger/trades/{trade_id}")
+def remove_trade(trade_id: int, request: Request, session: Session = Depends(get_session)):
+    trade = session.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="No such trade in the ledger")
+    session.delete(trade)
+    session.commit()
+    _poke(request)
+    return {"deleted": trade_id}
+
+
+@router.get("/ledger/export")
+def export_ledger(session: Session = Depends(get_session)):
+    """The whole ledger as a CSV that IMPORT CSV reads back."""
+    trades = session.scalars(select(Trade).order_by(Trade.traded_at, Trade.id)).all()
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=upstox.EXPORT_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(upstox.export_rows(trades, _names(session)))
+    name = f"quant-terminal-ledger-{datetime.now():%Y-%m-%d}.csv"
+    return Response(content=out.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/benchmarks")
+def list_benchmarks(q: str = Query("", max_length=64), limit: int = Query(40, ge=1, le=60)):
+    """Benchmark choices: built-in indices and ETFs, plus a live lookup for anything else."""
+    return market_search.search_benchmarks(q, limit)
 
 
 @router.get("/portfolio/holdings")
@@ -162,6 +279,7 @@ def search_stocks(q: str = Query("", max_length=64), limit: int = Query(10, ge=1
 @router.get("/metrics")
 def metrics(
     benchmark: str | None = None,
+    cov_horizon_days: int | None = None,
     confidence: float | None = None,
     horizon_days: int | None = None,
     lookback_days: int | None = None,
@@ -169,7 +287,7 @@ def metrics(
     refresh: bool = Query(True, description="Refresh prices from Yahoo (at most once a day)"),
     session: Session = Depends(get_session),
 ):
-    overrides = {"benchmark": benchmark, "confidence": confidence, "horizon_days": horizon_days,
+    overrides = {"benchmark": benchmark, "cov_horizon_days": cov_horizon_days, "confidence": confidence, "horizon_days": horizon_days,
                  "lookback_days": lookback_days, "risk_free_rate": risk_free_rate}
     try:
         return service.compute(session, overrides, refresh=refresh)
@@ -192,8 +310,9 @@ def write_settings(body: SettingsIn, session: Session = Depends(get_session)):
 
 @router.post("/market/refresh")
 def refresh_market(session: Session = Depends(get_session)):
-    benchmark = service.get_settings(session)["benchmark"]
-    return {"warnings": service.refresh_market(session, benchmark, force=True)}
+    settings = service.get_settings(session)
+    return {"warnings": service.refresh_market(session, settings["benchmark"], force=True,
+                                               lookback_days=int(settings["lookback_days"]))}
 
 
 @router.get("/corporate-actions")

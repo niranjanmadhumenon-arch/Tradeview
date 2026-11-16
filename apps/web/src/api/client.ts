@@ -1,4 +1,4 @@
-import type { CorporateAction, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, SearchResponse, Settings, Trade, UpstoxState } from "./types";
+import type { BenchmarkOption, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, SearchResponse, Settings, Trade, UpstoxState } from "./types";
 
 declare global {
   interface Window {
@@ -37,6 +37,30 @@ export const api = {
   metrics: (refresh: boolean) => call<Portfolio>(`/api/metrics?refresh=${refresh}`),
   search: (q: string) => call<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`),
   trades: () => call<Trade[]>("/api/ledger/trades"),
+  benchmarks: (q: string) =>
+    call<{ results: BenchmarkOption[]; online: boolean }>(`/api/benchmarks?q=${encodeURIComponent(q)}`),
+  recordTrade: (t: TradeInput) =>
+    call<Trade>("/api/ledger/trades", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(t),
+    }),
+  amendTrade: (id: number, t: TradeInput) =>
+    call<Trade>(`/api/ledger/trades/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(t),
+    }),
+  removeTrade: (id: number) => call<{ deleted: number }>(`/api/ledger/trades/${id}`, { method: "DELETE" }),
+  exportCsv: async () => {
+    const headers = new Headers();
+    if (TOKEN) headers.set("X-QT-Token", TOKEN);
+    const res = await fetch(`${BASE}/api/ledger/export`, { headers }).catch(() => null);
+    if (!res?.ok) throw new Error("Could not export the ledger");
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { blob: await res.blob(), name: `quant-terminal-ledger-${stamp}.csv` };
+  },
   actions: () => call<CorporateAction[]>("/api/corporate-actions"),
   refreshMarket: () => call<{ warnings: string[] }>("/api/market/refresh", { method: "POST" }),
   upstox: () => call<UpstoxState>("/api/upstox"),

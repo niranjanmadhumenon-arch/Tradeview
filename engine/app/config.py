@@ -11,13 +11,46 @@ APP_NAME = "QuantTerminal"
 
 DEFAULT_SETTINGS: dict[str, float | int | str] = {
     "benchmark": "^NSEI",
+    "benchmark_name": "",
     "confidence": 0.95,
     "horizon_days": 1,
     "lookback_days": 252,
+    "cov_horizon_days": 1,
     "risk_free_rate": 0.065,
 }
 
-ALLOWED_BENCHMARKS = ("^NSEI", "^BSESN")
+# Ready-made choices for the benchmark picker. Any other Yahoo symbol (index,
+# ETF, mutual fund or stock) can be used too; these are only shortcuts.
+BENCHMARK_PRESETS: tuple[tuple[str, str, str], ...] = (
+    ("^NSEI", "NIFTY 50", "INDEX"),
+    ("^BSESN", "SENSEX", "INDEX"),
+    ("^CRSLDX", "NIFTY 500", "INDEX"),
+    ("^NSEBANK", "NIFTY BANK", "INDEX"),
+    ("^CNX100", "NIFTY 100", "INDEX"),
+    ("^CNX200", "NIFTY 200", "INDEX"),
+    ("^NSMIDCP", "NIFTY NEXT 50", "INDEX"),
+    ("^NSEMDCP50", "NIFTY MIDCAP 50", "INDEX"),
+    ("NIFTYMIDCAP150.NS", "NIFTY MIDCAP 150", "INDEX"),
+    ("NIFTYSMLCAP250.NS", "NIFTY SMALLCAP 250", "INDEX"),
+    ("NIFTY_FIN_SERVICE.NS", "NIFTY FINANCIAL SERVICES", "INDEX"),
+    ("^CNXIT", "NIFTY IT", "INDEX"),
+    ("^CNXAUTO", "NIFTY AUTO", "INDEX"),
+    ("^CNXPHARMA", "NIFTY PHARMA", "INDEX"),
+    ("^CNXFMCG", "NIFTY FMCG", "INDEX"),
+    ("^CNXMETAL", "NIFTY METAL", "INDEX"),
+    ("^CNXENERGY", "NIFTY ENERGY", "INDEX"),
+    ("^CNXREALTY", "NIFTY REALTY", "INDEX"),
+    ("^CNXPSUBANK", "NIFTY PSU BANK", "INDEX"),
+    ("^CNXINFRA", "NIFTY INFRASTRUCTURE", "INDEX"),
+    ("BSE-100.BO", "BSE 100", "INDEX"),
+    ("BSE-200.BO", "BSE 200", "INDEX"),
+    ("BSE-500.BO", "BSE 500", "INDEX"),
+    ("NIFTYBEES.NS", "Nippon India ETF Nifty 50 BeES", "ETF"),
+    ("BANKBEES.NS", "Nippon India ETF Nifty Bank BeES", "ETF"),
+    ("JUNIORBEES.NS", "Nippon India ETF Nifty Next 50 Junior BeES", "ETF"),
+    ("GOLDBEES.NS", "Nippon India ETF Gold BeES", "ETF"),
+)
+BENCHMARK_NAMES = {symbol: name for symbol, name, _ in BENCHMARK_PRESETS}
 
 
 def data_dir() -> Path:

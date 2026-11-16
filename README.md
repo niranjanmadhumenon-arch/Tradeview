@@ -25,6 +25,18 @@ quit. Use **IMPORT CSV** in the ribbon to load an Upstox trade book. The search
 bar in the ribbon finds any NSE or BSE stock by company name or ticker (press
 `/` to focus it); without a network it still searches the stocks in your ledger.
 
+The app never places trades and has no way to. The **TRADES** tab is a ledger:
+**+ ADD TRADE** records a trade you made elsewhere, **EDIT** and **REMOVE**
+correct entries, and **EXPORT CSV** saves the whole ledger. An exported file can
+be edited in a spreadsheet and imported again: its `Ledger Id` column ties each
+row to its entry, so changed rows are updated and new rows are added.
+
+**BENCH** in the ribbon picks the benchmark for beta and alpha: a built-in list
+of NSE and BSE indices and ETFs, or any index, ETF, mutual fund or stock found
+by search. The covariance tab has its own return horizon (1, 2, 3, 5 or 10
+days), and **LOOKBACK** in the risk tab sets how much history the ratios use
+(1 month to 5 years).
+
 ## Build an installer
 
 ```bash

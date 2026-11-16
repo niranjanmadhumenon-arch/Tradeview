@@ -3,19 +3,23 @@ prices, and assembles the JSON payload the UI consumes."""
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, timedelta
 
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import ALLOWED_BENCHMARKS, DEFAULT_SETTINGS
+from app.config import BENCHMARK_NAMES, DEFAULT_SETTINGS
 from app.db.models import CorporateAction, Setting, Trade
 from app.ledger.positions import EPS, Position, build_positions
 from app.market import history
 from app.quant import metrics as qm
 
 MIN_OBSERVATIONS = 30
+MAX_LOOKBACK_DAYS = 2520   # ten years of trading days
+MAX_HORIZON_DAYS = 60
+_SYMBOL = re.compile(r"^[A-Z0-9^][A-Z0-9^&_.=-]{0,29}$")
 
 
 def _f(x) -> float | None:
@@ -29,6 +33,8 @@ def get_settings(session: Session) -> dict:
         row = session.get(Setting, key)
         if row is not None:
             out[key] = type(default)(row.value)
+    if not out["benchmark_name"]:
+        out["benchmark_name"] = BENCHMARK_NAMES.get(out["benchmark"], out["benchmark"])
     return out
 
 
@@ -38,17 +44,24 @@ def validate_settings(values: dict) -> dict:
         if key not in DEFAULT_SETTINGS or value is None:
             continue
         value = type(DEFAULT_SETTINGS[key])(value)
-        if key == "benchmark" and value not in ALLOWED_BENCHMARKS:
-            raise ValueError(f"benchmark must be one of {', '.join(ALLOWED_BENCHMARKS)}")
+        if key == "benchmark":
+            value = value.strip().upper()
+            if not _SYMBOL.match(value):
+                raise ValueError("benchmark must be a Yahoo Finance symbol, e.g. ^CRSLDX or NIFTYBEES.NS")
+        if key == "benchmark_name":
+            value = " ".join(value.split())[:80]
         if key == "confidence" and not 0.5 < value < 1:
             raise ValueError("confidence must be between 0.5 and 1 (e.g. 0.95 or 0.99)")
-        if key == "horizon_days" and value < 1:
-            raise ValueError("horizon_days must be at least 1")
-        if key == "lookback_days" and value < MIN_OBSERVATIONS:
-            raise ValueError(f"lookback_days must be at least {MIN_OBSERVATIONS}")
+        if key in ("horizon_days", "cov_horizon_days") and not 1 <= value <= MAX_HORIZON_DAYS:
+            raise ValueError(f"{key} must be between 1 and {MAX_HORIZON_DAYS}")
+        if key == "lookback_days" and not MIN_OBSERVATIONS <= value <= MAX_LOOKBACK_DAYS:
+            raise ValueError(f"lookback_days must be between {MIN_OBSERVATIONS} and {MAX_LOOKBACK_DAYS}")
         if key == "risk_free_rate" and not 0 <= value < 1:
             raise ValueError("risk_free_rate is an annual fraction, e.g. 0.065")
         clean[key] = value
+    # A new benchmark without a name must not keep the previous benchmark's name.
+    if "benchmark" in clean and not clean.get("benchmark_name"):
+        clean["benchmark_name"] = BENCHMARK_NAMES.get(clean["benchmark"], clean["benchmark"])
     return clean
 
 
@@ -69,17 +82,21 @@ def load_positions(session: Session) -> dict[str, Position]:
     return build_positions(trades, actions)
 
 
-def history_start(session: Session) -> date:
+def history_start(session: Session, lookback_days: int = 252) -> date:
+    """Earliest date to keep prices for: the first trade, or far enough back to
+    fill the lookback window (trading days, with room for holidays), whichever is earlier."""
     first = session.scalar(select(Trade.traded_at).order_by(Trade.traded_at).limit(1))
-    floor = date.today() - timedelta(days=3 * 365)
+    span = max(3 * 365, int(lookback_days * 365 / 252 * 1.1) + 45)
+    floor = date.today() - timedelta(days=span)
     return min(first.date() - timedelta(days=7), floor) if first else floor
 
 
-def refresh_market(session: Session, benchmark: str, fetcher=None, force: bool = False) -> list[str]:
+def refresh_market(session: Session, benchmark: str, fetcher=None, force: bool = False,
+                   lookback_days: int = 252) -> list[str]:
     """Refreshes every traded symbol plus the benchmark. Failures become warnings
     so the terminal keeps working offline from the cache."""
     warnings: list[str] = []
-    start = history_start(session)
+    start = history_start(session, lookback_days)
     symbols = list(session.scalars(select(Trade.symbol).distinct()))
     for symbol, is_index in [(s, False) for s in symbols] + [(benchmark, True)]:
         try:
@@ -95,7 +112,10 @@ def compute(session: Session, overrides: dict | None = None, *, refresh: bool = 
             fetcher=None) -> dict:
     params = {**get_settings(session), **validate_settings(overrides or {})}
     benchmark = params["benchmark"]
-    warnings = refresh_market(session, benchmark, fetcher) if refresh else []
+    label = params["benchmark_name"] or benchmark
+    lookback = int(params["lookback_days"])
+    warnings = (refresh_market(session, benchmark, fetcher, lookback_days=lookback)
+                if refresh else [])
 
     positions = load_positions(session)
     for p in positions.values():
@@ -148,10 +168,15 @@ def compute(session: Session, overrides: dict | None = None, *, refresh: bool = 
 
     has_bench = benchmark in adj.columns and adj[benchmark].notna().any()
     if not has_bench:
-        warnings.append(f"No history for benchmark {benchmark}; beta and alpha unavailable")
+        warnings.append(f"No price history for benchmark {label}; beta and alpha unavailable")
     cols = priced + ([benchmark] if has_bench else [])
-    rets = adj[cols].pct_change(fill_method=None).dropna(how="any").tail(int(params["lookback_days"]))
+    rets = adj[cols].pct_change(fill_method=None).dropna(how="any").tail(lookback)
     result["observations"] = len(rets)
+    if MIN_OBSERVATIONS <= len(rets) < lookback:
+        warnings.append(
+            f"Lookback is {lookback} trading days but only {len(rets)} overlapping daily returns "
+            "exist for these holdings and the benchmark; metrics use what is available"
+        )
     if len(rets) < MIN_OBSERVATIONS:
         warnings.append(
             f"Only {len(rets)} overlapping daily returns; need {MIN_OBSERVATIONS} for risk metrics"
@@ -186,8 +211,21 @@ def compute(session: Session, overrides: dict | None = None, *, refresh: bool = 
         holdings[s]["component_var"] = _f(c)
 
     result["metrics"] = m
-    result["covariance"] = {
-        "symbols": priced,
-        "annualized": [[_f(v) for v in row] for row in cov * qm.TRADING_DAYS],
-    }
+    h = int(params["cov_horizon_days"])
+    period = qm.horizon_returns(asset_rets.to_numpy(), h)
+    if len(period) >= MIN_OBSERVATIONS:
+        cov_h = np.atleast_2d(np.cov(period, rowvar=False, ddof=1))
+    else:
+        cov_h = None
+        warnings.append(f"Not enough history for a {h}-day covariance matrix; "
+                        f"{len(period)} overlapping {h}-day returns, need {MIN_OBSERVATIONS}")
+    if cov_h is not None:
+        result["covariance"] = {
+            "symbols": priced,
+            "horizon_days": h,
+            "observations": len(period),
+            "matrix": [[_f(v) for v in row] for row in cov_h],
+            "annualized": [[_f(v) for v in row] for row in cov_h * (qm.TRADING_DAYS / h)],
+            "correlation": [[_f(v) for v in row] for row in qm.correlation(cov_h)],
+        }
     return result

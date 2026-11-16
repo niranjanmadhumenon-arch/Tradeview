@@ -50,7 +50,7 @@ def test_metrics_end_to_end_and_recalculation(client, upstox_csv, monkeypatch):
     # benchmark swap persists through settings and changes the params used
     assert client.put("/api/settings", json={"benchmark": "^BSESN"}).json()["benchmark"] == "^BSESN"
     assert client.get("/api/metrics").json()["params"]["benchmark"] == "^BSESN"
-    assert client.put("/api/settings", json={"benchmark": "^GSPC"}).status_code == 400
+    assert client.put("/api/settings", json={"benchmark": "not a symbol!"}).status_code == 400
     assert client.get("/api/metrics", params={"confidence": 1.5}).status_code == 400
 
 
@@ -125,3 +125,134 @@ def test_search_works_offline_from_the_ledger(client, upstox_csv, monkeypatch):
     data = client.get("/api/search", params={"q": "relia"}).json()
     assert data["online"] is False
     assert data["results"][0]["symbol"] == "RELIANCE.NS" and data["results"][0]["held"] is True
+
+
+def test_manual_trades_can_be_recorded_amended_and_removed(client, upstox_csv):
+    upload(client, upstox_csv)
+    body = {"symbol": "infy", "side": "BUY", "quantity": 20, "price": 1500.0,
+            "traded_at": "2025-03-03T10:00:00", "name": "Infosys Limited"}
+    made = client.post("/api/ledger/trades", json=body)
+    assert made.status_code == 201
+    trade = made.json()
+    assert (trade["symbol"], trade["broker"], trade["name"]) == ("INFY.NS", "manual", "Infosys Limited")
+
+    def holding(symbol):
+        rows = client.get("/api/portfolio/holdings").json()["holdings"]
+        return next((h for h in rows if h["symbol"] == symbol), None)
+
+    assert holding("INFY.NS")["quantity"] == 20
+
+    amended = client.put(f"/api/ledger/trades/{trade['id']}", json={**body, "quantity": 15, "price": 1400.0})
+    assert amended.status_code == 200
+    assert (holding("INFY.NS")["quantity"], holding("INFY.NS")["avg_cost"]) == (15, 1400.0)
+
+    # an imported row can be corrected too
+    rel_sale = next(t for t in client.get("/api/ledger/trades").json()
+                    if t["symbol"] == "RELIANCE.NS" and t["side"] == "SELL")
+    fix = {"symbol": "RELIANCE.NS", "side": "SELL", "quantity": 5, "price": 1300.0,
+           "traded_at": rel_sale["traded_at"]}
+    assert client.put(f"/api/ledger/trades/{rel_sale['id']}", json=fix).status_code == 200
+    assert holding("RELIANCE.NS")["quantity"] == 5
+
+    assert client.delete(f"/api/ledger/trades/{trade['id']}").status_code == 200
+    assert holding("INFY.NS") is None
+    assert client.delete(f"/api/ledger/trades/{trade['id']}").status_code == 404
+
+    for bad in ({**body, "quantity": 0}, {**body, "price": -1}, {**body, "side": "SHORT"},
+                {**body, "symbol": "NIFTY 23000 CE"}):
+        assert client.post("/api/ledger/trades", json=bad).status_code in (400, 422)
+
+
+def test_export_round_trips_and_applies_edits_made_in_the_file(client, upstox_csv, tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    upload(client, upstox_csv)
+    client.post("/api/ledger/trades", json={"symbol": "INFY.BO", "side": "BUY", "quantity": 20,
+                                             "price": 1500.5, "traded_at": "2025-03-03T10:00:00"})
+    res = client.get("/api/ledger/export")
+    assert res.headers["content-type"].startswith("text/csv")
+    assert "attachment" in res.headers["content-disposition"]
+    text = res.text
+    assert text.splitlines()[0].startswith("Date,Company,Amount,Exchange")
+    assert len(text.splitlines()) == 5
+
+    # importing the export into the same ledger changes nothing
+    again = upload(client, text.encode()).json()
+    assert (again["imported"], again["updated"], again["duplicates"]) == (0, 0, 4)
+
+    # into an empty ledger it rebuilds the same positions, manual rows included
+    app = create_app(db_url=f"sqlite:///{(tmp_path / 'copy.sqlite3').as_posix()}", token="")
+    with TestClient(app) as other:
+        assert upload(other, text.encode()).json()["imported"] == 4
+        copy = {h["symbol"]: h["quantity"] for h in other.get("/api/portfolio/holdings").json()["holdings"]}
+        assert {t["broker"] for t in other.get("/api/ledger/trades").json()} == {"upstox", "manual"}
+    mine = {h["symbol"]: h["quantity"] for h in client.get("/api/portfolio/holdings").json()["holdings"]}
+    assert copy == mine == {"RELIANCE.NS": 6, "TCS.NS": 5, "INFY.BO": 20}
+
+    # a row edited in the file updates its ledger entry instead of adding a second one
+    edited = text.replace(",20,1500.5,", ",25,1500.5,")
+    assert edited != text
+    result = upload(client, edited.encode()).json()
+    assert (result["imported"], result["updated"], result["duplicates"]) == (0, 1, 3)
+    assert len(client.get("/api/ledger/trades").json()) == 4
+    infy = next(h for h in client.get("/api/portfolio/holdings").json()["holdings"] if h["symbol"] == "INFY.BO")
+    assert infy["quantity"] == 25
+
+
+def test_any_benchmark_can_be_chosen(client, upstox_csv, monkeypatch):
+    from app.market import search
+
+    monkeypatch.setattr(history, "fetch", fake_fetch)
+    upload(client, upstox_csv)
+
+    saved = client.put("/api/settings", json={"benchmark": "^crsldx"}).json()
+    assert (saved["benchmark"], saved["benchmark_name"]) == ("^CRSLDX", "NIFTY 500")
+    data = client.get("/api/metrics").json()
+    assert data["params"]["benchmark"] == "^CRSLDX" and data["metrics"]["beta"] is not None
+
+    fund = {"benchmark": "0P0000YWL1.BO", "benchmark_name": "Parag Parikh Flexi Cap Dir Gr"}
+    assert client.put("/api/settings", json=fund).json()["benchmark_name"] == fund["benchmark_name"]
+    assert client.get("/api/metrics").json()["metrics"]["beta"] is not None
+    # switching again without a name must not keep the fund's name
+    assert client.put("/api/settings", json={"benchmark": "^NSEBANK"}).json()["benchmark_name"] == "NIFTY BANK"
+
+    presets = client.get("/api/benchmarks").json()["results"]
+    assert {"^NSEI", "^BSESN", "^CRSLDX", "^NSEBANK"} <= {p["symbol"] for p in presets}
+
+    def fake_lookup(query, limit):
+        return [
+            {"symbol": "SPY", "longname": "SPDR S&P 500 ETF", "quoteType": "ETF", "exchange": "PCX"},
+            {"symbol": "0P0000YWL1.BO", "longname": "Parag Parikh Flexi Cap Dir Gr",
+             "quoteType": "MUTUALFUND", "exchange": "BSE"},
+            {"symbol": "X=F", "longname": "Some future", "quoteType": "FUTURE", "exchange": "CME"},
+        ]
+
+    search._CACHE.clear()
+    monkeypatch.setattr(search, "yahoo_lookup", fake_lookup)
+    found = client.get("/api/benchmarks", params={"q": "flexi"}).json()["results"]
+    assert [(r["symbol"], r["kind"]) for r in found] == [("0P0000YWL1.BO", "FUND"), ("SPY", "ETF")]
+
+
+def test_covariance_horizon_and_lookback_options(client, upstox_csv, monkeypatch):
+    monkeypatch.setattr(history, "fetch", fake_fetch)
+    upload(client, upstox_csv)
+
+    one = client.get("/api/metrics").json()["covariance"]
+    assert one["horizon_days"] == 1 and one["observations"] == 252
+
+    client.put("/api/settings", json={"cov_horizon_days": 10})
+    ten = client.get("/api/metrics").json()["covariance"]
+    assert ten["horizon_days"] == 10 and ten["observations"] == 243
+    # ten-day variance is roughly ten times daily variance for near-independent returns
+    assert 5 < ten["matrix"][0][0] / one["matrix"][0][0] < 20
+    assert ten["annualized"][0][0] == pytest.approx(ten["matrix"][0][0] * 25.2)
+    assert ten["correlation"][0][0] == pytest.approx(1.0)
+    assert ten["correlation"][0][1] == pytest.approx(ten["correlation"][1][0])
+
+    short = client.get("/api/metrics", params={"lookback_days": 63}).json()
+    assert short["observations"] == 63 and short["warnings"] == []
+    long = client.get("/api/metrics", params={"lookback_days": 1260}).json()
+    assert long["observations"] == 299 and any("only 299" in w for w in long["warnings"])
+    assert client.put("/api/settings", json={"cov_horizon_days": 0}).status_code == 400
+    assert client.put("/api/settings", json={"lookback_days": 5000}).status_code == 400

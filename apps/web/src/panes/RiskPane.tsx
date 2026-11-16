@@ -1,13 +1,14 @@
-import { benchmarkName, inr, num, pct, signed, ticker, tone } from "../format";
+import { inr, num, pct, signed, ticker, tone } from "../format";
 import { useStore } from "../state/store";
-import { Empty, Flash } from "../ui";
+import { Empty, Flash, Seg } from "../ui";
 
 export function RiskPane() {
   const p = useStore((s) => s.portfolio);
+  const setParam = useStore((s) => s.setParam);
   if (!p) return <Empty title="Waiting for engine" />;
   const m = p.metrics;
   const conf = Math.round(p.params.confidence * 100);
-  const bench = benchmarkName(p.params.benchmark);
+  const bench = (p.params.benchmark_name || p.params.benchmark).toUpperCase();
   const withVar = p.holdings.filter((h) => h.component_var != null);
   const maxVar = Math.max(...withVar.map((h) => Math.abs(h.component_var!)), 1e-9);
 
@@ -23,6 +24,17 @@ export function RiskPane() {
           </span>
           <span className="text-dim">{pct(m?.var_pct)} of value</span>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <Seg<number>
+          label="LOOKBACK" value={p.params.lookback_days}
+          options={LOOKBACKS}
+          onChange={(v) => setParam({ lookback_days: v })}
+        />
+        <span className="text-[10px] text-dim" title="Trading days of daily returns behind every ratio below">
+          {p.observations} of {p.params.lookback_days} days
+        </span>
       </div>
 
       <div className="grid grid-cols-2">
@@ -67,6 +79,13 @@ export function RiskPane() {
     </div>
   );
 }
+
+/** Trading days of history used for beta, alpha, Sharpe, Sortino, drawdown, volatility and VaR. */
+const LOOKBACKS = [
+  { value: 21, label: "1M" }, { value: 63, label: "3M" }, { value: 126, label: "6M" },
+  { value: 252, label: "1Y" }, { value: 504, label: "2Y" }, { value: 756, label: "3Y" },
+  { value: 1260, label: "5Y" },
+];
 
 function Tile({ label, value, text, cls = "" }: {
   label: string; value: number | null | undefined; text: string; cls?: string;

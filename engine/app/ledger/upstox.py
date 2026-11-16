@@ -25,6 +25,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "side": ("side", "buy/sell", "trade type", "type"),
     "qty": ("quantity", "qty"),
     "price": ("price", "trade price", "rate"),
+    # Written by this app's own export so an edited file updates rows instead of duplicating them.
+    "ledger_id": ("ledger id",),
 }
 REQUIRED = ("date", "scrip", "side", "qty", "price")
 NON_EQUITY_MARKERS = ("FO", "FUT", "OPT", "CD", "COM", "CURR", "MCX")
@@ -42,6 +44,7 @@ class ParsedTrade:
     quantity: float
     price: float
     traded_at: datetime
+    from_export: bool = False
 
 
 @dataclass
@@ -116,7 +119,10 @@ def parse(content: bytes | str) -> ParseResult:
                 continue
             exchange = get("exchange").upper() or "NSE"
             num = get("trade_num")
-            if num:
+            ledger_id = get("ledger_id")
+            if ledger_id:
+                trade_id = ledger_id
+            elif num:
                 trade_id = f"{traded_at.date().isoformat()}:{exchange}:{num}"
             else:
                 raw = f"{stamp}|{exchange}|{scrip}|{side}|{qty}|{price}|{n}"
@@ -132,8 +138,39 @@ def parse(content: bytes | str) -> ParseResult:
                     quantity=qty,
                     price=price,
                     traded_at=traded_at,
+                    from_export=bool(ledger_id),
                 )
             )
         except Exception as exc:  # one bad row must not sink the whole import
             result.skipped.append(f"line {n}: {exc}")
     return result
+
+
+EXPORT_COLUMNS = ("Date", "Company", "Amount", "Exchange", "Segment", "Scrip Code", "Trade Num",
+                  "Trade Time", "Side", "Quantity", "Price", "Source", "Ledger Id")
+
+
+def export_rows(trades, names: dict[str, str]) -> list[dict]:
+    """Ledger trades as rows this parser reads back. `Ledger Id` ties a row to
+    its ledger entry, so re-importing an edited export updates in place."""
+    rows = []
+    for t in trades:
+        scrip, _, suffix = t.symbol.rpartition(".")
+        exchange = {"NS": "NSE", "BO": "BSE"}.get(suffix, "NSE")
+        parts = t.trade_id.split(":")
+        rows.append({
+            "Date": t.traded_at.strftime("%d-%m-%Y"),
+            "Company": names.get(t.symbol, ""),
+            "Amount": f"{t.quantity * t.price:.2f}",
+            "Exchange": exchange,
+            "Segment": "EQ",
+            "Scrip Code": scrip or t.symbol,
+            "Trade Num": parts[2] if len(parts) == 3 and t.broker == BROKER else "",
+            "Trade Time": t.traded_at.strftime("%H:%M:%S"),
+            "Side": "Buy" if t.side == "BUY" else "Sell",
+            "Quantity": f"{t.quantity:g}",
+            "Price": f"{t.price:.4f}".rstrip("0").rstrip("."),
+            "Source": t.broker,
+            "Ledger Id": t.trade_id,
+        })
+    return rows

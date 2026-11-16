@@ -12,6 +12,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import BENCHMARK_PRESETS
 from app.db.models import Instrument
 
 Lookup = Callable[[str, int], list[dict]]
@@ -46,17 +47,22 @@ def _normalise(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _remote(query: str, limit: int, lookup: Lookup) -> list[dict]:
+def _raw(query: str, limit: int, lookup: Lookup) -> list[dict]:
+    """Yahoo's rows for a query, cached for a few minutes."""
     key = query.lower()
     hit = _CACHE.get(key)
     if hit and time.monotonic() - hit[0] < _CACHE_SECONDS:
         return hit[1]
     # Yahoo ranks global listings first, so ask for more than we show and filter.
-    rows = _normalise(lookup(query, max(limit * 3, 20)))
+    rows = lookup(query, max(limit * 3, 20))
     if len(_CACHE) >= _CACHE_SIZE:
         _CACHE.clear()
     _CACHE[key] = (time.monotonic(), rows)
     return rows
+
+
+def _remote(query: str, limit: int, lookup: Lookup) -> list[dict]:
+    return _normalise(_raw(query, limit, lookup))
 
 
 def _rank(query: str, item: dict) -> tuple:
@@ -105,3 +111,46 @@ def search(session: Session, query: str, limit: int = 10, lookup: Lookup | None 
     # stable sort keeps Yahoo's own relevance order inside each tier
     results = sorted(merged.values(), key=lambda item: _rank(query, item))[:limit]
     return {"query": query, "results": results, "online": online}
+
+
+_KINDS = {"INDEX": "INDEX", "ETF": "ETF", "MUTUALFUND": "FUND", "EQUITY": "STOCK"}
+_INDIAN = ("NSI", "BSE", "NSE", "BOM")
+
+
+def search_benchmarks(query: str, limit: int = 12, lookup: Lookup | None = None) -> dict:
+    """Benchmark candidates: the built-in list filtered by the query, then
+    anything Yahoo finds (indices, ETFs, mutual funds, stocks), Indian listings first."""
+    query = " ".join(query.split())
+    words = query.lower().split()
+    presets = [
+        {"symbol": symbol, "name": name, "kind": kind, "exchange": "", "preset": True}
+        for symbol, name, kind in BENCHMARK_PRESETS
+        if all(w in f"{name} {symbol}".lower() for w in words)
+    ]
+    if not query:
+        return {"query": query, "results": presets, "online": True}
+
+    online, found = True, []
+    try:
+        rows = _raw(query, limit, lookup or yahoo_lookup)
+    except Exception:
+        rows, online = [], False
+    seen = {p["symbol"] for p in presets}
+    for row in rows:
+        symbol = str(row.get("symbol") or "").upper()
+        kind = _KINDS.get(str(row.get("quoteType") or "").upper())
+        if not symbol or kind is None or symbol in seen:
+            continue
+        seen.add(symbol)
+        exchange = str(row.get("exchange") or "").upper()
+        indian = exchange in _INDIAN or symbol.endswith((".NS", ".BO"))
+        found.append({
+            "symbol": symbol,
+            "name": str(row.get("longname") or row.get("shortname") or symbol).strip(),
+            "kind": kind,
+            "exchange": _exchange(symbol) or str(row.get("exchDisp") or exchange),
+            "preset": False,
+            "_rank": (not indian, kind == "STOCK"),
+        })
+    found.sort(key=lambda item: item.pop("_rank"))
+    return {"query": query, "results": (presets + found)[:limit], "online": online}

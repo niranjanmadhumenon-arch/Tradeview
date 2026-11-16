@@ -1,7 +1,7 @@
-export type Benchmark = "^NSEI" | "^BSESN";
-
 export interface Settings {
-  benchmark: Benchmark;
+  benchmark: string;
+  benchmark_name: string;
+  cov_horizon_days: number;
   confidence: number;
   horizon_days: number;
   lookback_days: number;
@@ -43,15 +43,43 @@ export interface Portfolio {
   unrealized_pnl: number | null;
   dividends: number | null;
   metrics: Metrics | null;
-  covariance: { symbols: string[]; annualized: (number | null)[][] } | null;
+  covariance: Covariance | null;
   observations: number;
   holdings: Holding[];
   warnings: string[];
 }
 
+export interface Covariance {
+  symbols: string[];
+  horizon_days: number;
+  observations: number;
+  matrix: (number | null)[][];
+  annualized: (number | null)[][];
+  correlation: (number | null)[][];
+}
+
+export interface BenchmarkOption {
+  symbol: string;
+  name: string;
+  kind: "INDEX" | "ETF" | "FUND" | "STOCK";
+  exchange: string;
+  preset: boolean;
+}
+
+/** A trade made elsewhere, as typed into the ledger. Never sent to a broker. */
+export interface TradeInput {
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price: number;
+  traded_at: string;
+  name?: string;
+}
+
 export interface Trade {
   id: number;
   symbol: string;
+  name: string;
   side: "BUY" | "SELL";
   quantity: number;
   price: number;
@@ -71,6 +99,7 @@ export interface CorporateAction {
 export interface ImportResult {
   imported: number;
   duplicates: number;
+  updated: number;
   skipped: string[];
 }
 

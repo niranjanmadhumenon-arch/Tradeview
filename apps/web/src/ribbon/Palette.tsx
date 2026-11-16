@@ -5,6 +5,10 @@ import type { Holding } from "../api/types";
 import { useStore } from "../state/store";
 
 const NONE: Holding[] = [];
+const BENCHMARKS = [
+  ["^NSEI", "NIFTY 50"], ["^BSESN", "SENSEX"], ["^CRSLDX", "NIFTY 500"], ["^NSEBANK", "NIFTY BANK"],
+  ["^NSMIDCP", "NIFTY NEXT 50"], ["NIFTYMIDCAP150.NS", "NIFTY MIDCAP 150"], ["BSE-500.BO", "BSE 500"],
+] as const;
 
 export function Palette() {
   const open = useStore((s) => s.paletteOpen);
@@ -56,17 +60,32 @@ export function Palette() {
           </Command.Group>
         )}
         <Command.Group heading="RISK PARAMETERS" className={group}>
-          <Command.Item className={item} onSelect={run(() => setParam({ benchmark: "^NSEI" }))}>Benchmark: NIFTY 50</Command.Item>
-          <Command.Item className={item} onSelect={run(() => setParam({ benchmark: "^BSESN" }))}>Benchmark: SENSEX</Command.Item>
+          {BENCHMARKS.map(([symbol, name]) => (
+            <Command.Item key={symbol} className={item}
+                          onSelect={run(() => setParam({ benchmark: symbol, benchmark_name: name }))}>
+              Benchmark: {name}
+            </Command.Item>
+          ))}
           <Command.Item className={item} onSelect={run(() => setParam({ confidence: 0.95 }))}>VaR confidence: 95%</Command.Item>
           <Command.Item className={item} onSelect={run(() => setParam({ confidence: 0.99 }))}>VaR confidence: 99%</Command.Item>
-          <Command.Item className={item} onSelect={run(() => setParam({ horizon_days: 1 }))}>VaR horizon: 1 day</Command.Item>
-          <Command.Item className={item} onSelect={run(() => setParam({ horizon_days: 10 }))}>VaR horizon: 10 days</Command.Item>
+          {[1, 2, 3, 5, 10].map((d) => (
+            <Command.Item key={`v${d}`} className={item} onSelect={run(() => setParam({ horizon_days: d }))}>
+              VaR horizon: {d} day{d > 1 ? "s" : ""}
+            </Command.Item>
+          ))}
+          {[1, 2, 3, 5, 10].map((d) => (
+            <Command.Item key={`c${d}`} className={item} onSelect={run(() => setParam({ cov_horizon_days: d }))}>
+              Covariance horizon: {d} day{d > 1 ? "s" : ""}
+            </Command.Item>
+          ))}
         </Command.Group>
         <Command.Group heading="WORKSPACE" className={group}>
           <Command.Item className={item}
                         onSelect={run(() => document.getElementById("qt-import")?.click())}>
             Import Upstox trade-book CSV
+          </Command.Item>
+          <Command.Item className={item} onSelect={run(() => useStore.getState().exportCsv())}>
+            Export ledger as CSV
           </Command.Item>
           <Command.Item className={item}
                         onSelect={run(() => useStore.getState().setUpstoxOpen(true))}>

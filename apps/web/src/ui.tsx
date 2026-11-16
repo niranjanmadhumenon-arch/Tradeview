@@ -25,19 +25,21 @@ export function Empty({ title, hint }: { title: string; hint?: string }) {
 }
 
 export function Seg<T extends string | number>({
-  label, value, options, onChange,
+  label, value, options, onChange, hideLabel = false,
 }: {
+  hideLabel?: boolean;
   label: string;
   value: T | undefined;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5" role="group" aria-label={label}>
-      <span className="text-[10px] tracking-widest text-dim">{label}</span>
+    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label={label}>
+      {!hideLabel && <span className="text-[10px] tracking-widest text-dim">{label}</span>}
       <div className="flex overflow-hidden rounded-sm border border-line">
         {options.map((o) => (
           <button
+            type="button"
             key={String(o.value)}
             onClick={() => onChange(o.value)}
             aria-pressed={o.value === value}

@@ -30,6 +30,20 @@ historical performance of the account.
 VaR uses the zero-mean (RiskMetrics) convention: expected return is ignored
 over short horizons.
 
+**Lookback.** Every metric above uses the last `lookback_days` daily returns
+(21 to 1260 in the UI, default 252). If the holdings and the benchmark share
+less history than that, the metrics use what exists and a warning says how much.
+
+**Benchmark.** Any Yahoo Finance symbol: an index, ETF, mutual fund or stock.
+Beta and alpha are measured against its adjusted closes (daily NAV for a fund).
+
+**Covariance tab.** For a horizon of `h` days (1, 2, 3, 5 or 10), returns are
+compounded over every overlapping `h`-day window of the lookback, and the tab
+shows their sample covariance, the same matrix annualized by `252 / h`, and the
+correlation matrix. This is measured from `h`-day returns, so it can differ from
+`h` times the daily matrix when returns are autocorrelated. VaR does not use it:
+VaR always scales the daily matrix by `sqrt(h)` with its own horizon.
+
 ## Positions and corporate actions
 
 Positions replay trades and corporate actions in date order

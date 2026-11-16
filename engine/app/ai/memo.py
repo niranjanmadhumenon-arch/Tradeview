@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-BENCHMARK_NAMES = {"^NSEI": "NIFTY 50", "^BSESN": "SENSEX"}
+from app.config import BENCHMARK_NAMES
 
 SYSTEM_INSTRUCTION = """You are a risk strategist writing a short tactical hedging memo for the user of a \
 read-only portfolio analytics terminal covering Indian equities.
@@ -62,7 +62,7 @@ def build_payload(data: dict) -> dict:
     cost_total = value - (data["unrealized_pnl"] or 0.0)
     return {
         "as_of": data["as_of"],
-        "benchmark": BENCHMARK_NAMES.get(params["benchmark"], params["benchmark"]),
+        "benchmark": params.get("benchmark_name") or BENCHMARK_NAMES.get(params["benchmark"], params["benchmark"]),
         "var_confidence_pct": _r(params["confidence"] * 100, 1),
         "var_horizon_days": int(params["horizon_days"]),
         "lookback_trading_days": int(data["observations"]),

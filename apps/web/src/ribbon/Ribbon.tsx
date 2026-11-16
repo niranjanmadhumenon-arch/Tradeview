@@ -1,8 +1,8 @@
 import { useRef } from "react";
-import type { Benchmark } from "../api/types";
 import { feedLabel } from "../format";
 import { useStore } from "../state/store";
 import { Seg } from "../ui";
+import { BenchmarkPicker } from "./BenchmarkPicker";
 import { SearchBox } from "./SearchBox";
 
 export function Ribbon() {
@@ -27,27 +27,23 @@ export function Ribbon() {
     busy ? "CALC" : status === "down" ? "DOWN" : status !== "ok" ? "INIT" : feedLabel(feed);
 
   return (
-    <header className="flex h-10 shrink-0 items-center gap-4 border-b border-line bg-panel px-3">
+    <header className="flex h-10 shrink-0 items-center gap-3 whitespace-nowrap border-b border-line bg-panel px-3 xl:gap-4">
       <div className="flex items-center gap-2">
         <span className="bg-amber px-1.5 py-0.5 text-[11px] font-bold tracking-widest text-black">QT</span>
-        <span className="hidden text-[10px] tracking-widest text-dim lg:inline">READ-ONLY</span>
+        <span className="hidden text-[10px] tracking-widest text-dim 2xl:inline">READ-ONLY</span>
       </div>
 
       <SearchBox />
 
-      <Seg<Benchmark>
-        label="BENCH" value={params?.benchmark}
-        options={[{ value: "^NSEI", label: "NIFTY" }, { value: "^BSESN", label: "SENSEX" }]}
-        onChange={(v) => setParam({ benchmark: v })}
-      />
+      <BenchmarkPicker />
       <Seg<number>
         label="VAR" value={params?.confidence}
         options={[{ value: 0.95, label: "95%" }, { value: 0.99, label: "99%" }]}
         onChange={(v) => setParam({ confidence: v })}
       />
       <Seg<number>
-        label="HORIZON" value={params?.horizon_days}
-        options={[{ value: 1, label: "1D" }, { value: 10, label: "10D" }]}
+        label="VAR HORIZON" value={params?.horizon_days}
+        options={[1, 2, 3, 5, 10].map((d) => ({ value: d, label: `${d}D` }))}
         onChange={(v) => setParam({ horizon_days: v })}
       />
 

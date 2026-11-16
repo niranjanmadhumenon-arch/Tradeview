@@ -62,3 +62,13 @@ def test_var_scales_with_confidence_and_horizon():
     assert v95 == pytest.approx(3289.71, abs=0.5)   # 100000 * 1.6448536 * 0.02
     assert v99 == pytest.approx(4652.70, abs=0.5)   # 100000 * 2.3263479 * 0.02
     assert v99_10d == pytest.approx(v99 * math.sqrt(10))
+
+
+def test_horizon_returns_compound_over_overlapping_windows():
+    r = np.array([0.10, -0.05, 0.02, 0.03])
+    two = qm.horizon_returns(r, 2)
+    assert two == pytest.approx([1.10 * 0.95 - 1, 0.95 * 1.02 - 1, 1.02 * 1.03 - 1])
+    assert qm.horizon_returns(r, 1) == pytest.approx(r)
+    assert len(qm.horizon_returns(r, 5)) == 0
+    wide = qm.horizon_returns(np.column_stack([r, r]), 3)
+    assert wide.shape == (2, 2) and wide[0, 0] == pytest.approx(1.10 * 0.95 * 1.02 - 1)

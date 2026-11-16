@@ -67,3 +67,22 @@ def parametric_var(
     scale = portfolio_value * z * math.sqrt(horizon_days)
     component = scale * w * (cov @ w) / sigma if sigma > 0 else np.zeros_like(w)
     return {"var": scale * sigma, "sigma_daily": sigma, "z": z, "component": component}
+
+
+def horizon_returns(returns: np.ndarray, days: int) -> np.ndarray:
+    """Compounded returns over every overlapping window of `days` rows.
+    Input is (T,) or (T, N) daily simple returns; output has T - days + 1 rows."""
+    r = np.asarray(returns, dtype=float)
+    if days <= 1:
+        return r
+    if len(r) < days:
+        return r[:0]
+    growth = np.cumsum(np.log1p(r), axis=0)
+    growth = np.concatenate([np.zeros_like(growth[:1]), growth], axis=0)
+    return np.expm1(growth[days:] - growth[:-days])
+
+
+def correlation(cov: np.ndarray) -> np.ndarray:
+    sd = np.sqrt(np.diag(cov))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return cov / np.outer(sd, sd)

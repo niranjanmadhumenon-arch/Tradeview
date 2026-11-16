@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, openTicks } from "../api/client";
-import type { CorporateAction, LiveSnapshot, Portfolio, Settings, Trade } from "../api/types";
+import type { CorporateAction, LiveSnapshot, Portfolio, Settings, Trade, TradeInput } from "../api/types";
 
 type Status = "connecting" | "ok" | "down";
 
@@ -21,6 +21,9 @@ interface State {
   reload: (refresh?: boolean) => Promise<void>;
   setParam: (patch: Partial<Settings>) => Promise<void>;
   importCsv: (file: File) => Promise<void>;
+  exportCsv: () => Promise<void>;
+  saveTrade: (input: TradeInput, id?: number) => Promise<boolean>;
+  removeTrade: (id: number) => Promise<void>;
   refreshPrices: () => Promise<void>;
   select: (symbol: string | null) => void;
   setPalette: (open: boolean) => void;
@@ -100,12 +103,53 @@ export const useStore = create<State>((set, get) => ({
     try {
       const r = await api.importCsv(file);
       const parts = [`${r.imported} trades imported`];
+      if (r.updated) parts.push(`${r.updated} updated from the file`);
       if (r.duplicates) parts.push(`${r.duplicates} already in ledger`);
       if (r.skipped.length) parts.push(`${r.skipped.length} rows skipped`);
       set({ notice: parts.join(" · ") });
       await get().reload(true);
     } catch (e) {
       set({ error: (e as Error).message, busy: false });
+    }
+  },
+
+  exportCsv: async () => {
+    try {
+      const { blob, name } = await api.exportCsv();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      set({ notice: `Ledger exported as ${name}` });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  saveTrade: async (input, id) => {
+    try {
+      if (id == null) await api.recordTrade(input);
+      else await api.amendTrade(id, input);
+      set({ notice: id == null ? "Trade recorded in the ledger" : "Trade updated", error: null });
+      await get().reload(true);
+      return true;
+    } catch (e) {
+      set({ error: (e as Error).message });
+      return false;
+    }
+  },
+
+  removeTrade: async (id) => {
+    try {
+      await api.removeTrade(id);
+      set({ notice: "Trade removed from the ledger", error: null });
+      await get().reload(true);
+    } catch (e) {
+      set({ error: (e as Error).message });
     }
   },
 
