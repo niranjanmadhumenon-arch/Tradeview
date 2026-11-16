@@ -191,7 +191,7 @@ async def remove_upstox_token(request: Request):
 @router.get("/ledger/import/formats")
 def import_formats():
     """The headings each supported file needs, for the import page."""
-    return mapping.formats()
+    return {**mapping.formats(), "everything": workbook.guide(), "broker_labels": detect.BROKER_LABELS}
 
 
 @router.get("/ledger/import/template")

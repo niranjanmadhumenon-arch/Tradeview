@@ -33,7 +33,7 @@ interface State {
   init: () => Promise<void>;
   reload: (refresh?: boolean) => Promise<void>;
   setParam: (patch: Partial<Settings>) => Promise<void>;
-  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number) => Promise<void>;
+  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number, broker?: string) => Promise<void>;
   importEverything: (file: File) => Promise<string[]>;
   importOpen: boolean;
   setImportOpen: (open: boolean) => void;
@@ -169,10 +169,10 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  importCsv: async (file, columns, headerRow) => {
+  importCsv: async (file, columns, headerRow, broker) => {
     set({ busy: true, error: null });
     try {
-      const r = await api.importCsv(file, columns, headerRow);
+      const r = await api.importCsv(file, columns, headerRow, broker);
       const from = r.broker ? ` from ${r.broker[0].toUpperCase()}${r.broker.slice(1)}` : "";
       const parts = [`${r.imported} trades imported${from}`];
       if (r.updated) parts.push(`${r.updated} updated from the file`);

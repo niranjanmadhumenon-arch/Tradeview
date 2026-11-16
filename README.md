@@ -274,9 +274,35 @@ TEMPLATE gives a ready-to-fill file.
 
 ### Everything in one file
 
-IMPORT CSV / EXCEL also takes one Excel workbook holding everything you own.
-DOWNLOAD ALL-IN-ONE TEMPLATE gives a ready-made workbook to fill in. Each sheet
-is recognised by its headings, so sheets can be renamed, reordered or left out.
+IMPORT CSV / EXCEL also takes one file holding everything you own. The dialog
+starts by asking what you are uploading:
+
+- **Let the app decide** (the default)
+- **Broker trade report** (Zerodha, Groww or Upstox, with an optional broker picker)
+- **My holdings file**
+
+When the app decides, a file with Zerodha, Groww or Upstox headings is read as
+trades. A file with an **Instrument type** column, or with bond or wealth sheets,
+is read as holdings. After you choose a file, **READ AS** switches between the
+two readings.
+
+**The Instrument type column.** Each row says what it is, and is placed
+accordingly:
+
+- Stock, ETF, Mutual fund and Commodity rows become trades.
+- Bond rows become bonds.
+- FD, RD, PPF, EPF, NPS, Pension, Cash, Life insurance and Term insurance rows become wealth items.
+
+So one sheet can hold everything, and an FD is never mistaken for a stock, or
+EPF for NPS. Common variants are understood too: Equity, MF, Gold, G-Sec,
+Debenture, Fixed Deposit, "HDFC Bank FD", VPF, ULIP, "SBI Term Plan" and so on.
+
+In this sheet, **Interest / coupon %** is the interest or coupon rate, and
+**Price** is the share, unit or NAV price. The import dialog lists every type
+and the columns it uses. DOWNLOAD HOLDINGS TEMPLATE gives a ready-made
+"Holdings" sheet with an example of each type and a drop-down for the type.
+
+Separate sheets without an Instrument type column also work:
 
 | Sheet | What goes in it |
 | --- | --- |

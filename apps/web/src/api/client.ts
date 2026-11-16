@@ -125,12 +125,13 @@ export const api = {
   insightPreview: () => call<Record<string, unknown>>("/api/insight/preview"),
   createMemo: () => call<Memo>("/api/insight/memo", { method: "POST" }),
   memos: () => call<Memo[]>("/api/insight/memos"),
-  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number) => {
+  importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number, broker?: string) => {
     const form = new FormData();
     form.append("file", file);
     if (columns) form.append("columns", JSON.stringify(columns));
     if (headerRow != null) form.append("header_row", String(headerRow));
-    return call<ImportResult>("/api/ledger/import", { method: "POST", body: form });
+    const q = broker ? `?broker=${encodeURIComponent(broker)}` : "";
+    return call<ImportResult>(`/api/ledger/import${q}`, { method: "POST", body: form });
   },
   importPreview: (file: File) => {
     const form = new FormData();

@@ -41,30 +41,83 @@ def test_the_template_imports_everything_in_one_go(client):
     content = client.get("/api/import/everything/template").content
     preview = upload(client, content, path="/api/import/everything/preview").json()
     kinds = {s["sheet"]: s["kind"] for s in preview["sheets"]}
-    assert kinds == {"Read me": "skip", "Stocks & funds": "trades", "Bonds": "bonds", "Wealth": "wealth"}
-    assert all(not s.get("missing") for s in preview["sheets"])
-    stocks = next(s for s in preview["sheets"] if s["sheet"] == "Stocks & funds")
-    assert stocks["default_exchange"] == ""                 # "funds" in the name must not make stocks funds
+    assert kinds == {"Read me": "skip", "Holdings": "mixed"} and preview["broker"] is None
+    holdings = next(s for s in preview["sheets"] if s["sheet"] == "Holdings")
+    assert holdings["routes"] == {"Trades": 5, "Bonds": 2, "Wealth": 9}
 
     r = upload(client, content).json()
     assert r["skipped"] == []
-    assert r["totals"] == {"trades": 5, "trade_duplicates": 0, "bonds": 2, "wealth": 7}
+    assert r["totals"] == {"trades": 6, "trade_duplicates": 0, "bonds": 2, "wealth": 9}
     symbols = {t["symbol"] for t in client.get("/api/ledger/trades").json()}
-    assert symbols == {"INFY.NS", "AAPL", "MF:122639", "CMDTY:GOLD", "BOND:GOI2033"}
+    assert symbols == {"INFY.NS", "AAPL", "GOLDBEES.NS", "MF:122639", "CMDTY:GOLD", "BOND:GOI2033"}
     bonds = {b["symbol"]: b for b in client.get("/api/bonds").json()}
     assert bonds["BOND:GOI2033"]["coupon_rate"] == 7.18 and bonds["BOND:GOI2033"]["frequency"] == 2
-    assert bonds["BOND:NHAI2031"]["frequency"] == 1 and bonds["BOND:NHAI2031"]["price"] == 1012
+    assert bonds["BOND:GOI2033"]["face_value"] == 100
+    assert bonds["BOND:NHAI2031"]["frequency"] == 1 and bonds["BOND:NHAI2031"]["coupon_rate"] == 7.35
+    gsec = next(t for t in client.get("/api/ledger/trades").json() if t["symbol"] == "BOND:GOI2033")
+    assert gsec["quantity"] == 50 and gsec["price"] == 101.25
     items = {i["kind"]: i for i in client.get("/api/wealth").json()["items"]}
-    assert set(items) == {"fixed_deposit", "ppf", "epf", "nps", "cash", "life_insurance", "term_insurance"}
-    assert items["fixed_deposit"]["start_date"] == "2024-04-01" and items["fixed_deposit"]["rate"] == 7.25
+    assert set(items) == {"fixed_deposit", "recurring_deposit", "ppf", "epf", "nps", "pension", "cash",
+                          "life_insurance", "term_insurance"}
+    fd = items["fixed_deposit"]
+    assert (fd["start_date"], fd["maturity_date"], fd["rate"], fd["amount"], fd["institution"]) == (
+        "2024-04-01", "2027-04-01", 7.25, 200000, "HDFC Bank")
     assert items["term_insurance"]["cover"] == 10_000_000 and items["term_insurance"]["amount"] == 0
-    assert items["ppf"]["monthly_contribution"] == 12500
+    assert items["ppf"]["monthly_contribution"] == 12500 and items["epf"]["rate"] == 8.25
+    assert items["nps"]["amount"] == 310000 and items["life_insurance"]["cover"] == 1_000_000
+    holdings = {h["symbol"]: h for h in client.get("/api/metrics?refresh=false").json()["holdings"]}
+    assert holdings["GOLDBEES.NS"]["asset_class"] == "etf"              # the file said ETF
 
     # Importing the same file again adds nothing.
     again = upload(client, content).json()
-    assert again["totals"]["trades"] == 0 and again["totals"]["trade_duplicates"] == 5
+    assert again["totals"]["trades"] == 0 and again["totals"]["trade_duplicates"] == 6
     assert again["totals"]["bonds"] == 0 and again["totals"]["wealth"] == 0
-    assert len(client.get("/api/wealth").json()["items"]) == 7
+    assert len(client.get("/api/wealth").json()["items"]) == 9
+
+
+def test_separate_sheets_still_work(client):
+    content = xlsx({
+        "Stocks & funds": [["Date", "Symbol", "Exchange", "Side", "Quantity", "Price"],
+                           ["2025-01-15", "INFY", "", "BUY", 10, 1850]],
+        "Bonds": [["Bond ID", "Coupon %", "Maturity"], ["GOI2033", 7.18, "2033-08-14"]],
+        "Wealth": [["Type", "Amount", "Rate %", "Start date"], ["FD", 100000, 7, "2024-04-01"]],
+    })
+    pv = upload(client, content, path="/api/import/everything/preview").json()["sheets"]
+    assert [(s["kind"], s.get("default_exchange", "")) for s in pv] == [("trades", ""), ("bonds", ""), ("wealth", "")]
+    r = upload(client, content).json()
+    assert r["totals"] == {"trades": 1, "trade_duplicates": 0, "bonds": 1, "wealth": 1}
+    assert client.get("/api/ledger/trades").json()[0]["symbol"] == "INFY.NS"   # "funds" in the name: still NSE
+
+
+def test_a_plain_type_column_with_instrument_names_routes_each_row(client):
+    csv = (b"Type,Name,Symbol,Date,Qty,Price,Amount,Interest %,Maturity\n"
+           b"Equity,Infosys,INFY,2025-01-15,10,1850,,,\n"
+           b"MF,Flexi cap,122639,2025-02-01,50,80,,,\n"
+           b"Gold,Coins,,2025-03-01,20,8450,,,\n"
+           b"Fixed Deposit,SBI FD,,2024-04-01,,,100000,7,2027-04-01\n"
+           b"VPF,Voluntary PF,,,,,50000,8.25,\n"
+           b"Crypto,BTC,,2025-01-01,1,100,,,\n")
+    pv = upload(client, csv, name="mine.csv", path="/api/import/everything/preview").json()["sheets"][0]
+    assert pv["kind"] == "mixed" and pv["mapping"]["itype"] == "Type" and not pv["mapping"].get("side")
+    r = upload(client, csv, name="mine.csv").json()
+    assert r["totals"]["trades"] == 3 and r["totals"]["wealth"] == 2
+    assert any("'Crypto' not recognised" in s for s in r["skipped"])
+    assert {t["symbol"] for t in client.get("/api/ledger/trades").json()} == {"INFY.NS", "MF:122639", "CMDTY:GOLD"}
+    kinds = {i["kind"]: i for i in client.get("/api/wealth").json()["items"]}
+    assert kinds["fixed_deposit"]["rate"] == 7 and kinds["epf"]["amount"] == 50000   # Rate = interest, not a price
+
+
+def test_broker_reports_are_recognised_not_read_as_holdings(client):
+    upstox_csv = (b"Date,Company,Amount,Exchange,Segment,Scrip Code,Instrument Type,Side,Quantity,Price,Trade Num\n"
+                  b"15-01-2025,INFOSYS LTD,18500,NSE,EQ,INFY,EQ,Buy,10,1850,T1\n")
+    pv = upload(client, upstox_csv, name="tb.csv", path="/api/import/everything/preview").json()
+    assert pv["broker"] == "upstox" and pv["sheets"][0]["kind"] == "trades"    # not a mixed holdings sheet
+    zerodha_csv = b"symbol,isin,trade_date,exchange,segment,trade_type,quantity,price,trade_id\nINFY,INE009A01021,2025-01-15,NSE,EQ,buy,10,1850,1\n"
+    assert upload(client, zerodha_csv, name="z.csv", path="/api/import/everything/preview").json()["broker"] == "zerodha"
+    mine = b"Instrument type,Symbol,Date,Quantity,Price\nStock,INFY,2025-01-15,10,1850\n"
+    assert upload(client, mine, name="m.csv", path="/api/import/everything/preview").json()["broker"] is None
+    guide = client.get("/api/ledger/import/formats").json()["everything"]
+    assert {"FD", "EPF", "NPS", "Bond", "Mutual fund", "Commodity"} <= {t["type"] for t in guide["types"]}
 
 
 def test_loose_headings_sheet_names_and_updates(client):

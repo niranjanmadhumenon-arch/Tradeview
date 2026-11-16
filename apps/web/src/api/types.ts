@@ -351,7 +351,9 @@ export interface ImportPreview {
 
 export interface EverythingSheet {
   sheet: string;
-  kind: "trades" | "bonds" | "wealth" | "skip";
+  kind: "trades" | "bonds" | "wealth" | "mixed" | "skip";
+  routes?: Record<string, number>;
+  broker?: string | null;
   rows: number;
   reason?: string;
   header_row?: number;
@@ -365,6 +367,7 @@ export interface EverythingSheet {
 export interface EverythingPreview {
   sheets: EverythingSheet[];
   workbook: boolean;
+  broker: string | null;
 }
 
 export interface EverythingResult {
@@ -376,6 +379,12 @@ export interface EverythingResult {
 export interface ImportFormats {
   generic: { headings: { heading: string; required: boolean; format: string }[]; notes: string[] };
   brokers: Record<string, { label: string; file: string; required: string[]; optional: string[]; where: string }>;
+  everything?: {
+    types: { type: string; goes_to: string; uses: string; also: string[] }[];
+    columns: { heading: string; required: boolean; format: string }[];
+    notes: string[];
+  };
+  broker_labels?: Record<string, string>;
 }
 
 export interface ShockRow { shock: number; pnl: number; pnl_pct: number; low: number; high: number; beta: number }
