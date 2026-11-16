@@ -272,6 +272,23 @@ Buy/Sell, Txn Date...). If a column still isn't recognised, the import page
 lets you point each field at the right column before importing. DOWNLOAD
 TEMPLATE gives a ready-to-fill file.
 
+### Everything in one file
+
+IMPORT CSV / EXCEL also takes one Excel workbook holding everything you own.
+DOWNLOAD ALL-IN-ONE TEMPLATE gives a ready-made workbook to fill in. Each sheet
+is recognised by its headings, so sheets can be renamed, reordered or left out.
+
+| Sheet | What goes in it |
+| --- | --- |
+| Stocks & funds | Every buy and sell of stocks and ETFs. Mutual funds use Exchange `MF` with the AMFI scheme code as the Symbol. Gold, silver and other commodities use Exchange `COMMODITY` with a Symbol such as `GOLD`. |
+| Bonds | Coupon %, Maturity and Frequency. Add Quantity, Purchase price and Purchase date to record the holding too. |
+| Wealth | Type (FD, RD, PPF, EPF, NPS, Pension, Cash, Life insurance / ULIP, Term insurance), Amount, Rate %, Start date, Maturity date, Monthly contribution, Cover, Premium. |
+
+- **Sheet names:** in a sheet named after mutual funds, a blank Exchange means `MF`. In one named after gold or commodities, it means `COMMODITY`.
+- **Wealth details:** amounts can be written as "2 lakh" or "10,00,000". A fixed deposit needs its start date.
+- **Re-importing:** the same workbook again adds no duplicates. Trades keep their ids, bonds are matched by id, and wealth items by type, name, institution and start date. Changed rows are updated.
+- **Skipped rows:** rows that can't be read are listed after the import, with the reason.
+
 ## News
 
 The NEWS tab covers the stocks you hold, watch (eye) or star, plus market news

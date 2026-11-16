@@ -34,6 +34,7 @@ interface State {
   reload: (refresh?: boolean) => Promise<void>;
   setParam: (patch: Partial<Settings>) => Promise<void>;
   importCsv: (file: File, columns?: Record<string, string | null>, headerRow?: number) => Promise<void>;
+  importEverything: (file: File) => Promise<string[]>;
   importOpen: boolean;
   setImportOpen: (open: boolean) => void;
   exportCsv: () => Promise<void>;
@@ -181,6 +182,23 @@ export const useStore = create<State>((set, get) => ({
       await get().reload(true);
     } catch (e) {
       set({ error: (e as Error).message, busy: false });
+    }
+  },
+
+  importEverything: async (file) => {
+    set({ busy: true, error: null });
+    try {
+      const r = await api.importEverything(file);
+      const t = r.totals;
+      const parts = [`${t.trades} trades`, `${t.bonds} bonds`, `${t.wealth} wealth items imported or updated`];
+      if (t.trade_duplicates) parts.push(`${t.trade_duplicates} trades already in ledger`);
+      if (r.skipped.length) parts.push(`${r.skipped.length} rows skipped`);
+      set({ notice: parts.join(" · ") });
+      await get().reload(true);
+      return r.skipped;
+    } catch (e) {
+      set({ error: (e as Error).message, busy: false });
+      return [];
     }
   },
 

@@ -1,4 +1,4 @@
-import type { PortfolioCash, Timeline, NewsSource, ProjectionResult, WealthInput, WealthItemRow, WealthOverview, NewsFeed, ImportFormats, ImportPreview, StressResult, ActionReview, CacheStatus, OptimizerResult, WatchItem, AssetClass, BenchmarkOption, Bond, BondInput, BseSyncResult, ConnectionsState, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, PriceSource, SearchResponse, Settings, SourceId, SyncResult, Trade } from "./types";
+import type { PortfolioCash, Timeline, NewsSource, EverythingPreview, EverythingResult, ProjectionResult, WealthInput, WealthItemRow, WealthOverview, NewsFeed, ImportFormats, ImportPreview, StressResult, ActionReview, CacheStatus, OptimizerResult, WatchItem, AssetClass, BenchmarkOption, Bond, BondInput, BseSyncResult, ConnectionsState, CorporateAction, TradeInput, ImportResult, InsightState, Memo, LiveSnapshot, Portfolio, PriceSource, SearchResponse, Settings, SourceId, SyncResult, Trade } from "./types";
 
 declare global {
   interface Window {
@@ -138,6 +138,22 @@ export const api = {
     return call<ImportPreview>("/api/ledger/import/preview", { method: "POST", body: form });
   },
   importFormats: () => call<ImportFormats>("/api/ledger/import/formats"),
+  everythingPreview: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return call<EverythingPreview>("/api/import/everything/preview", { method: "POST", body: form });
+  },
+  importEverything: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return call<EverythingResult>("/api/import/everything", { method: "POST", body: form });
+  },
+  everythingTemplate: async () => {
+    const headers = new Headers();
+    if (TOKEN) headers.set("X-QT-Token", TOKEN);
+    const res = await fetch(`${BASE}/api/import/everything/template`, { headers });
+    return res.blob();
+  },
   importTemplate: async () => {
     const headers = new Headers();
     if (TOKEN) headers.set("X-QT-Token", TOKEN);

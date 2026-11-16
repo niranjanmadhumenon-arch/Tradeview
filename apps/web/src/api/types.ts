@@ -349,6 +349,30 @@ export interface ImportPreview {
   fields: ImportField[];
 }
 
+export interface EverythingSheet {
+  sheet: string;
+  kind: "trades" | "bonds" | "wealth" | "skip";
+  rows: number;
+  reason?: string;
+  header_row?: number;
+  headings?: string[];
+  mapping?: Record<string, string | null>;
+  missing?: string[];
+  default_exchange?: string;
+  samples: string[][];
+}
+
+export interface EverythingPreview {
+  sheets: EverythingSheet[];
+  workbook: boolean;
+}
+
+export interface EverythingResult {
+  sheets: { sheet: string; kind: string; added: number; updated: number; duplicates: number; skipped: string[] }[];
+  totals: { trades: number; trade_duplicates: number; bonds: number; wealth: number };
+  skipped: string[];
+}
+
 export interface ImportFormats {
   generic: { headings: { heading: string; required: boolean; format: string }[]; notes: string[] };
   brokers: Record<string, { label: string; file: string; required: string[]; optional: string[]; where: string }>;
